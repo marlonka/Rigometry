@@ -1,0 +1,1112 @@
+[
+  [
+    "not supplied",
+    "nicht angegeben",
+    "non fourni",
+    "no indicado"
+  ],
+  [
+    "Not supplied",
+    "Nicht angegeben",
+    "Non fourni",
+    "No indicado"
+  ],
+  [
+    "Drive {0} ({1}) omitted: capacity is unavailable, not zero. {2}",
+    "Laufwerk {0} ({1}) ausgelassen: Kapazität nicht verfügbar, nicht null. {2}",
+    "Lecteur {0} ({1}) omis : capacité indisponible, et non nulle. {2}",
+    "Unidad {0} ({1}) omitida: capacidad no disponible, no cero. {2}"
+  ],
+  [
+    "Drive capacity/free space: GetDiskFreeSpaceEx values available to this user; per-user quotas can reduce these values. A failed query omits the drive and records its mount above instead of fabricating zero capacity.",
+    "Kapazität/freier Speicher: GetDiskFreeSpaceEx-Werte für diesen Benutzer; Benutzerkontingente können sie verringern. Bei fehlgeschlagener Abfrage wird das Laufwerk ausgelassen und sein Pfad oben vermerkt; eine Kapazität von null wird nicht angenommen.",
+    "Capacité/espace libre : valeurs GetDiskFreeSpaceEx accessibles à cet utilisateur ; les quotas peuvent les réduire. En cas d’échec, le lecteur est omis et son point de montage indiqué ci-dessus, sans inventer une capacité nulle.",
+    "Capacidad/espacio libre: valores de GetDiskFreeSpaceEx disponibles para este usuario; las cuotas pueden reducirlos. Si la consulta falla, se omite la unidad y se indica su punto de montaje arriba, sin inventar una capacidad de cero."
+  ],
+  [
+    "Windows exposes no universal unprivileged CPU package sensor. Requires a supported, signed hardware access provider; none is bundled.",
+    "Windows bietet keinen universellen CPU-Temperatursensor ohne erhöhte Rechte. Eine unterstützte, signierte Hardwarezugriffskomponente wäre nötig; keine ist enthalten.",
+    "Windows ne fournit aucun capteur thermique universel du processeur sans privilèges. Une source d’accès matériel signée et compatible serait nécessaire ; aucune n’est incluse.",
+    "Windows no ofrece un sensor térmico universal de CPU sin privilegios. Se necesita un proveedor de acceso al hardware firmado y compatible; no se incluye ninguno."
+  ],
+  [
+    "Requires a model-specific vendor or signed privileged provider; none is bundled.",
+    "Erfordert eine modellspezifische Herstellerkomponente oder einen signierten Anbieter mit erhöhten Rechten; keiner ist enthalten.",
+    "Nécessite une source propre au modèle ou une source signée avec privilèges ; aucune n’est incluse.",
+    "Requiere un proveedor específico del modelo o uno firmado con privilegios; no se incluye ninguno."
+  ],
+  [
+    "RAPL / vendor energy counters require supported model-specific privileged access; none is bundled.",
+    "RAPL-/Hersteller-Energiezähler erfordern unterstützten, modellspezifischen Zugriff mit erhöhten Rechten; keine solche Komponente ist enthalten.",
+    "Les compteurs d’énergie RAPL/du fabricant nécessitent un accès privilégié compatible et propre au modèle ; aucun n’est inclus.",
+    "Los contadores de energía RAPL/del fabricante requieren acceso privilegiado compatible y específico del modelo; no se incluye ninguno."
+  ],
+  [
+    "SMBIOS module positions do not establish active channel mode; no memory-controller provider is bundled.",
+    "SMBIOS-Steckplätze belegen nicht den aktiven Kanalmodus; keine Speichercontroller-Komponente ist enthalten.",
+    "Les positions SMBIOS des modules ne déterminent pas le mode des canaux actif ; aucune source du contrôleur mémoire n’est incluse.",
+    "Las posiciones SMBIOS de los módulos no determinan el modo de canales activo; no se incluye ningún proveedor del controlador de memoria."
+  ],
+  [
+    "SMBIOS exposes module identification and transfer rates only. SPD profiles and active timings need supported SMBus / memory-controller access; no signed provider is bundled.",
+    "SMBIOS liefert nur Modulkennung und Transferraten. SPD-Profile und aktive Timings benötigen unterstützten SMBus-/Speichercontroller-Zugriff; kein signierter Anbieter ist enthalten.",
+    "SMBIOS fournit uniquement l’identification des modules et leurs débits. Les profils SPD et timings actifs nécessitent un accès compatible au SMBus/contrôleur mémoire ; aucune source signée n’est incluse.",
+    "SMBIOS solo ofrece identificación de módulos y tasas de transferencia. Los perfiles SPD y las latencias activas requieren acceso compatible al SMBus/controlador de memoria; no se incluye ningún proveedor firmado."
+  ],
+  [
+    "Discovery is read-only. CPUID cache descriptions describe the executing processor's cache topology. Firmware values may be incomplete or incorrect; their SMBIOS source remains visible.",
+    "Die Erkennung liest ausschließlich. CPUID-Cacheangaben beschreiben die Cachetopologie des ausführenden Prozessors. Firmwarewerte können unvollständig oder falsch sein; ihre SMBIOS-Quelle bleibt sichtbar.",
+    "La détection est en lecture seule. Les descriptions de cache CPUID concernent la topologie du processeur exécutant le code. Les valeurs du micrologiciel peuvent être incomplètes ou incorrectes ; leur source SMBIOS reste visible.",
+    "La detección es de solo lectura. Las descripciones de caché CPUID corresponden al procesador que ejecuta el código. Los valores del firmware pueden ser incompletos o incorrectos; su fuente SMBIOS permanece visible."
+  ],
+  [
+    "The processor returned zero (frequency information unavailable in this CPUID leaf)",
+    "Der Prozessor lieferte null (Frequenzangabe in diesem CPUID-Blatt nicht verfügbar)",
+    "Le processeur a renvoyé zéro (fréquence indisponible dans cette feuille CPUID)",
+    "El procesador devolvió cero (frecuencia no disponible en esta hoja CPUID)"
+  ],
+  [
+    "This processor does not implement CPUID frequency leaf 16h; firmware-configured and Windows-reported frequencies are shown separately",
+    "Dieser Prozessor unterstützt das CPUID-Frequenzblatt 16h nicht; Firmware- und Windows-Frequenzangaben werden getrennt angezeigt",
+    "Ce processeur ne prend pas en charge la feuille de fréquence CPUID 16h ; les fréquences du micrologiciel et de Windows sont affichées séparément",
+    "Este procesador no implementa la hoja de frecuencia CPUID 16h; las frecuencias del firmware y de Windows se muestran por separado"
+  ],
+  [
+    "Cache geometry exceeds a 64-bit byte count",
+    "Cachegeometrie überschreitet einen 64-Bit-Bytezähler",
+    "La géométrie du cache dépasse un nombre d’octets sur 64 bits",
+    "La geometría de caché supera un recuento de bytes de 64 bits"
+  ],
+  [
+    "Waiting for two CPU-time samples",
+    "Warten auf zwei CPU-Zeitmessungen",
+    "En attente de deux mesures du temps processeur",
+    "Esperando dos mediciones del tiempo de CPU"
+  ],
+  [
+    "This provider requires Windows",
+    "Diese Quelle benötigt Windows",
+    "Cette source nécessite Windows",
+    "Esta fuente requiere Windows"
+  ],
+  [
+    "Windows did not report usable memory",
+    "Windows meldete keinen nutzbaren Speicher",
+    "Windows n’a pas indiqué de mémoire utilisable",
+    "Windows no indicó memoria utilizable"
+  ],
+  [
+    "Module manufacturer ID 04 EF (JEDEC bank 5, code EF); firmware manufacturer name missing",
+    "Modulherstellerkennung 04 EF (JEDEC-Bank 5, Code EF); Herstellername fehlt in der Firmware",
+    "Identifiant fabricant du module 04 EF (banque JEDEC 5, code EF) ; nom absent du micrologiciel",
+    "ID de fabricante del módulo 04 EF (banco JEDEC 5, código EF); falta el nombre en el firmware"
+  ],
+  [
+    "Firmware manufacturer: {0}; module manufacturer ID: {1}",
+    "Firmware-Herstellerangabe: {0}; Modulherstellerkennung: {1}",
+    "Fabricant indiqué par le micrologiciel : {0} ; identifiant fabricant du module : {1}",
+    "Fabricante indicado por el firmware: {0}; ID de fabricante del módulo: {1}"
+  ],
+  [
+    "Raw SMBIOS header truncated",
+    "SMBIOS-Rohdatenkopf abgeschnitten",
+    "En-tête SMBIOS brut tronqué",
+    "Cabecera SMBIOS sin procesar truncada"
+  ],
+  [
+    "SMBIOS table exceeds safety bound",
+    "SMBIOS-Tabelle überschreitet die Sicherheitsgrenze",
+    "La table SMBIOS dépasse la limite de sécurité",
+    "La tabla SMBIOS supera el límite de seguridad"
+  ],
+  [
+    "Missing SMBIOS length",
+    "SMBIOS-Längenangabe fehlt",
+    "Longueur SMBIOS manquante",
+    "Falta la longitud SMBIOS"
+  ],
+  [
+    "SMBIOS length overflow",
+    "SMBIOS-Längenüberlauf",
+    "Dépassement de longueur SMBIOS",
+    "Desbordamiento de longitud SMBIOS"
+  ],
+  [
+    "SMBIOS table length exceeds returned bytes",
+    "SMBIOS-Tabellenlänge übersteigt die gelieferten Bytes",
+    "La longueur de la table SMBIOS dépasse les octets reçus",
+    "La longitud de la tabla SMBIOS supera los bytes recibidos"
+  ],
+  [
+    "SMBIOS record count exceeds safety bound",
+    "SMBIOS-Datensatzanzahl überschreitet die Sicherheitsgrenze",
+    "Le nombre d’enregistrements SMBIOS dépasse la limite de sécurité",
+    "El número de registros SMBIOS supera el límite de seguridad"
+  ],
+  [
+    "Truncated SMBIOS structure header",
+    "SMBIOS-Strukturkopf abgeschnitten",
+    "En-tête de structure SMBIOS tronqué",
+    "Cabecera de estructura SMBIOS truncada"
+  ],
+  [
+    "SMBIOS structure length below header size",
+    "SMBIOS-Struktur kürzer als ihr Kopf",
+    "Structure SMBIOS plus courte que son en-tête",
+    "La estructura SMBIOS es más corta que su cabecera"
+  ],
+  [
+    "Truncated SMBIOS formatted record",
+    "Formatierter SMBIOS-Datensatz abgeschnitten",
+    "Enregistrement SMBIOS formaté tronqué",
+    "Registro SMBIOS formateado truncado"
+  ],
+  [
+    "Missing SMBIOS string section",
+    "SMBIOS-Zeichenkettenabschnitt fehlt",
+    "Section de chaînes SMBIOS manquante",
+    "Falta la sección de cadenas SMBIOS"
+  ],
+  [
+    "Unterminated SMBIOS strings",
+    "SMBIOS-Zeichenketten ohne Abschluss",
+    "Chaînes SMBIOS non terminées",
+    "Cadenas SMBIOS sin terminar"
+  ],
+  [
+    "SMBIOS string data exceeds safety bound",
+    "SMBIOS-Zeichenkettendaten überschreiten die Sicherheitsgrenze",
+    "Les chaînes SMBIOS dépassent la limite de sécurité",
+    "Los datos de cadenas SMBIOS superan el límite de seguridad"
+  ],
+  [
+    "SMBIOS string count or length exceeds safety bound",
+    "Anzahl oder Länge der SMBIOS-Zeichenketten überschreitet die Sicherheitsgrenze",
+    "Le nombre ou la longueur des chaînes SMBIOS dépasse la limite de sécurité",
+    "El número o la longitud de cadenas SMBIOS supera el límite de seguridad"
+  ],
+  [
+    "Firmware reports {0}",
+    "Firmware meldet {0}",
+    "Le micrologiciel indique {0}",
+    "El firmware indica {0}"
+  ],
+  [
+    "Firmware omitted module capacity",
+    "Firmware liefert keine Modulkapazität",
+    "Le micrologiciel n’indique pas la capacité du module",
+    "El firmware no indica la capacidad del módulo"
+  ],
+  [
+    "Firmware omitted the transfer rate",
+    "Firmware liefert keine Transferrate",
+    "Le micrologiciel n’indique pas le débit",
+    "El firmware no indica la tasa de transferencia"
+  ],
+  [
+    "Complete DIMM capacities not supplied by firmware",
+    "Firmware liefert keine vollständigen DIMM-Kapazitäten",
+    "Capacités DIMM complètes non fournies par le micrologiciel",
+    "El firmware no proporciona las capacidades DIMM completas"
+  ],
+  [
+    "No valid PCI function: bus={0}, device={1}, function={2}; software/virtual adapters need not have a physical PCI address",
+    "Keine gültige PCI-Funktion: Bus={0}, Gerät={1}, Funktion={2}; Software-/virtuelle Grafikkarten benötigen keine physische PCI-Adresse",
+    "Fonction PCI non valide : bus={0}, périphérique={1}, fonction={2} ; les cartes logicielles/virtuelles n’ont pas nécessairement d’adresse PCI physique",
+    "Función PCI no válida: bus={0}, dispositivo={1}, función={2}; las tarjetas virtuales/de software no necesitan una dirección PCI física"
+  ],
+  [
+    "Driver returned raw frequency {0} for a documented Hz field. Nonzero clock below 1 MHz has unverified units; no unit correction is assumed.",
+    "Treiber lieferte Rohfrequenz {0} für ein als Hz dokumentiertes Feld. Bei einem Takt über null und unter 1 MHz ist die Einheit ungeprüft; sie wird nicht automatisch korrigiert.",
+    "Le pilote a renvoyé la fréquence brute {0} pour un champ documenté en Hz. Une fréquence non nulle inférieure à 1 MHz a des unités non vérifiées ; aucune correction n’est supposée.",
+    "El controlador devolvió la frecuencia sin procesar {0} en un campo documentado en Hz. Una frecuencia no nula inferior a 1 MHz tiene unidades sin verificar; no se aplica ninguna corrección supuesta."
+  ],
+  [
+    "Waiting for two successful processor-time samples",
+    "Warten auf zwei erfolgreiche Prozessorzeitmessungen",
+    "En attente de deux mesures valides du temps processeur",
+    "Esperando dos mediciones válidas del tiempo del procesador"
+  ],
+  [
+    "Processor topology changed; collecting a new baseline",
+    "Prozessortopologie geändert; neue Ausgangsmessung läuft",
+    "Topologie du processeur modifiée ; nouvelle mesure de référence",
+    "La topología del procesador cambió; obteniendo una nueva referencia"
+  ],
+  [
+    "At least one processor time delta was invalid; aggregate not estimated",
+    "Mindestens eine Prozessorzeitdifferenz war ungültig; Gesamtwert wird nicht geschätzt",
+    "Au moins un écart de temps processeur est invalide ; total non estimé",
+    "Al menos una diferencia de tiempo del procesador no era válida; no se estima el total"
+  ],
+  [
+    "Logical processor count unavailable or outside supported bound",
+    "Anzahl logischer Prozessoren nicht verfügbar oder außerhalb des unterstützten Bereichs",
+    "Nombre de processeurs logiques indisponible ou hors limites",
+    "Número de procesadores lógicos no disponible o fuera del límite admitido"
+  ],
+  [
+    "Processor performance query NTSTATUS 0x{0}",
+    "Prozessorleistungsabfrage NTSTATUS 0x{0}",
+    "Requête de performances du processeur NTSTATUS 0x{0}",
+    "Consulta de rendimiento del procesador NTSTATUS 0x{0}"
+  ],
+  [
+    "Processor performance query returned {0} bytes for {1} logical processors; incomplete topology",
+    "Prozessorleistungsabfrage lieferte {0} Bytes für {1} logische Prozessoren; Topologie unvollständig",
+    "La requête de performances a renvoyé {0} octets pour {1} processeurs logiques ; topologie incomplète",
+    "La consulta de rendimiento devolvió {0} bytes para {1} procesadores lógicos; topología incompleta"
+  ],
+  [
+    "Processor time counter moved backwards",
+    "Prozessorzeitzähler lief rückwärts",
+    "Le compteur de temps processeur a reculé",
+    "El contador de tiempo del procesador retrocedió"
+  ],
+  [
+    "Processor time counter overflow",
+    "Überlauf des Prozessorzeitzählers",
+    "Dépassement du compteur de temps processeur",
+    "Desbordamiento del contador de tiempo del procesador"
+  ],
+  [
+    "Processor time has not advanced; awaiting next sample",
+    "Prozessorzeit unverändert; nächste Messung wird abgewartet",
+    "Le temps processeur n’a pas avancé ; prochaine mesure attendue",
+    "El tiempo del procesador no avanzó; esperando la siguiente medición"
+  ],
+  [
+    "Idle time exceeds kernel + user time",
+    "Leerlaufzeit übersteigt Kernel- und Benutzerzeit",
+    "Le temps d’inactivité dépasse le temps noyau + utilisateur",
+    "El tiempo de inactividad supera el tiempo de kernel + usuario"
+  ],
+  [
+    "Available physical memory exceeds total",
+    "Verfügbarer physischer Speicher übersteigt Gesamtspeicher",
+    "La mémoire physique disponible dépasse le total",
+    "La memoria física disponible supera el total"
+  ],
+  [
+    "Drive path is empty or contains a NUL character",
+    "Laufwerkspfad ist leer oder enthält ein NUL-Zeichen",
+    "Le chemin du lecteur est vide ou contient un caractère NUL",
+    "La ruta de la unidad está vacía o contiene un carácter NUL"
+  ],
+  [
+    "Available drive capacity exceeds total capacity",
+    "Verfügbare Laufwerkskapazität übersteigt Gesamtkapazität",
+    "La capacité disponible du lecteur dépasse sa capacité totale",
+    "La capacidad disponible de la unidad supera su capacidad total"
+  ],
+  [
+    "Windows processor frequency query NTSTATUS 0x{0}",
+    "Windows-Prozessorfrequenzabfrage NTSTATUS 0x{0}",
+    "Requête de fréquence du processeur Windows NTSTATUS 0x{0}",
+    "Consulta de frecuencia del procesador de Windows NTSTATUS 0x{0}"
+  ],
+  [
+    "Mean Windows-reported current frequency across logical processors; not an effective-clock counter measurement.",
+    "Mittlere aktuelle Windows-Frequenz aller logischen Prozessoren; keine Messung des effektiven Takts.",
+    "Fréquence actuelle moyenne indiquée par Windows pour les processeurs logiques ; ce n’est pas une mesure de fréquence effective.",
+    "Frecuencia actual media indicada por Windows para los procesadores lógicos; no es una medición de frecuencia efectiva."
+  ],
+  [
+    "SMBIOS parse: {0}",
+    "SMBIOS-Auswertung: {0}",
+    "Lecture SMBIOS : {0}",
+    "Lectura de SMBIOS: {0}"
+  ],
+  [
+    "GetSystemFirmwareTable returned no complete SMBIOS table",
+    "GetSystemFirmwareTable lieferte keine vollständige SMBIOS-Tabelle",
+    "GetSystemFirmwareTable n’a renvoyé aucune table SMBIOS complète",
+    "GetSystemFirmwareTable no devolvió una tabla SMBIOS completa"
+  ],
+  [
+    "SMBIOS unavailable: GetSystemFirmwareTable returned {0} bytes",
+    "SMBIOS nicht verfügbar: GetSystemFirmwareTable lieferte {0} Bytes",
+    "SMBIOS indisponible : GetSystemFirmwareTable a renvoyé {0} octets",
+    "SMBIOS no disponible: GetSystemFirmwareTable devolvió {0} bytes"
+  ],
+  [
+    "Windows did not return readable SMBIOS identification",
+    "Windows lieferte keine lesbare SMBIOS-Kennung",
+    "Windows n’a pas renvoyé d’identification SMBIOS lisible",
+    "Windows no devolvió una identificación SMBIOS legible"
+  ],
+  [
+    "Display driver returned no value",
+    "Grafiktreiber lieferte keinen Wert",
+    "Le pilote graphique n’a renvoyé aucune valeur",
+    "El controlador gráfico no devolvió ningún valor"
+  ],
+  [
+    "DXGI adapter discovery failed: {0}",
+    "DXGI-Grafikkartenerkennung fehlgeschlagen: {0}",
+    "Échec de détection des cartes DXGI : {0}",
+    "Falló la detección de tarjetas DXGI: {0}"
+  ],
+  [
+    "D3DKMT exposes PCI address and bandwidth, not negotiated link generation/width. No validated vendor PCIe query is enabled for this adapter.",
+    "D3DKMT liefert PCI-Adresse und Bandbreite, nicht die ausgehandelte Generation/Anbindung. Für diese Grafikkarte ist keine validierte Hersteller-PCIe-Abfrage aktiviert.",
+    "D3DKMT fournit l’adresse PCI et la bande passante, pas la génération/largeur négociée. Aucune requête PCIe validée du fabricant n’est activée pour cette carte.",
+    "D3DKMT ofrece dirección PCI y ancho de banda, no la generación/anchura negociada. No hay una consulta PCIe validada del fabricante activa para esta tarjeta."
+  ],
+  [
+    "AMD: Windows WDDM counters and D3DKMT are enabled. ADLX supports additional sensors, but no ADLX runtime or bindings are bundled; verify AMD SDK redistribution terms and physical AMD hardware before adding it. Unsupported driver queries stay unavailable.",
+    "AMD: Windows-WDDM-Zähler und D3DKMT sind aktiviert. ADLX unterstützt weitere Sensoren, ist aber nicht enthalten. Vor einer Integration sind AMD-SDK-Vertriebsbedingungen und Tests auf AMD-Hardware erforderlich. Nicht unterstützte Treiberabfragen bleiben nicht verfügbar.",
+    "AMD : compteurs WDDM Windows et D3DKMT activés. ADLX propose d’autres capteurs, mais n’est pas inclus. Vérifier les conditions de redistribution du SDK AMD et le matériel AMD avant intégration. Les requêtes non prises en charge restent indisponibles.",
+    "AMD: contadores WDDM de Windows y D3DKMT activos. ADLX ofrece más sensores, pero no se incluye. Antes de integrarlo, hay que verificar las condiciones de redistribución del SDK AMD y probar hardware AMD. Las consultas no compatibles siguen sin estar disponibles."
+  ],
+  [
+    "Intel: Windows WDDM counters and D3DKMT are enabled. IGCL offers additional driver-specific telemetry; no IGCL binding is bundled. IGCL device mapping and sensor support require physical Intel GPU verification.",
+    "Intel: Windows-WDDM-Zähler und D3DKMT sind aktiviert. IGCL bietet zusätzliche treiberspezifische Messwerte, ist aber nicht enthalten. Gerätezuordnung und Sensorunterstützung über IGCL erfordern Tests auf Intel-Grafikhardware.",
+    "Intel : compteurs WDDM Windows et D3DKMT activés. IGCL propose d’autres mesures propres au pilote, mais n’est pas inclus. L’association des périphériques et les capteurs IGCL doivent être vérifiés sur une carte Intel physique.",
+    "Intel: contadores WDDM de Windows y D3DKMT activos. IGCL ofrece más mediciones específicas del controlador, pero no se incluye. La asociación de dispositivos y los sensores IGCL requieren verificación en una GPU Intel física."
+  ],
+  [
+    "GPU identity: DXGI LUID binds Windows counters and D3DKMT to the same adapter. NVIDIA sensors require a unique NVML PCI bus/device/function + vendor/device match. No provider is matched by enumeration order.",
+    "GPU-Zuordnung: DXGI LUID bindet Windows-Zähler und D3DKMT an dieselbe Grafikkarte. NVIDIA-Sensoren benötigen eine eindeutige NVML-Zuordnung über PCI-Bus/Gerät/Funktion und Hersteller/Gerät. Die Erkennungsreihenfolge wird nicht verwendet.",
+    "Identification GPU : DXGI LUID associe les compteurs Windows et D3DKMT à la même carte. Les capteurs NVIDIA nécessitent une correspondance NVML unique bus/périphérique/fonction PCI et fabricant/périphérique. L’ordre d’énumération n’est jamais utilisé.",
+    "Identidad GPU: DXGI LUID vincula los contadores de Windows y D3DKMT a la misma tarjeta. Los sensores NVIDIA requieren una coincidencia NVML única de bus/dispositivo/función PCI y fabricante/dispositivo. Nunca se usa el orden de enumeración."
+  ],
+  [
+    "DXGI CurrentUsage and Budget are process-scoped; labels explicitly identify this process. WDDM GPU Adapter Memory counters report adapter usage. NVML used memory includes driver-reserved allocation.",
+    "DXGI CurrentUsage und Budget gelten für diesen Prozess; die Beschriftung kennzeichnet das ausdrücklich. WDDM-Grafikspeicherzähler melden die Grafikkartenbelegung. NVML-Speicherbelegung enthält Treiberreservierungen.",
+    "DXGI CurrentUsage et Budget concernent ce processus, comme indiqué. Les compteurs mémoire GPU WDDM décrivent la carte. La mémoire utilisée NVML inclut les réservations du pilote.",
+    "DXGI CurrentUsage y Budget se refieren a este proceso, como indican sus etiquetas. Los contadores de memoria GPU WDDM describen la tarjeta. La memoria usada NVML incluye las reservas del controlador."
+  ],
+  [
+    "CPU topology: {0}",
+    "CPU-Topologie: {0}",
+    "Topologie du processeur : {0}",
+    "Topología de CPU: {0}"
+  ],
+  [
+    "Native provider returned a length exceeding its buffer",
+    "Native Quelle lieferte eine Länge außerhalb ihres Puffers",
+    "La source native a renvoyé une longueur dépassant son tampon",
+    "La fuente nativa devolvió una longitud superior a su búfer"
+  ],
+  [
+    "Truncated processor topology record",
+    "Prozessortopologiedatensatz abgeschnitten",
+    "Enregistrement de topologie du processeur tronqué",
+    "Registro de topología del procesador truncado"
+  ],
+  [
+    "Malformed processor topology record",
+    "Ungültiger Prozessortopologiedatensatz",
+    "Enregistrement de topologie du processeur mal formé",
+    "Registro de topología del procesador mal formado"
+  ],
+  [
+    "Display driver query {0} returned NTSTATUS 0x{1}",
+    "Grafiktreiberabfrage {0} lieferte NTSTATUS 0x{1}",
+    "La requête du pilote graphique {0} a renvoyé NTSTATUS 0x{1}",
+    "La consulta del controlador gráfico {0} devolvió NTSTATUS 0x{1}"
+  ],
+  [
+    "IDXGIAdapter3 is unavailable",
+    "IDXGIAdapter3 ist nicht verfügbar",
+    "IDXGIAdapter3 est indisponible",
+    "IDXGIAdapter3 no está disponible"
+  ],
+  [
+    "D3DKMT adapter handle unavailable",
+    "D3DKMT-Grafikkartenhandle nicht verfügbar",
+    "Handle de carte D3DKMT indisponible",
+    "Identificador de tarjeta D3DKMT no disponible"
+  ],
+  [
+    "Current link generation/width is not exposed by the enabled provider for this adapter.",
+    "Die aktive Quelle liefert keine aktuelle Verbindungsgeneration/-breite dieser Grafikkarte.",
+    "La source active ne fournit pas la génération/largeur actuelle de liaison de cette carte.",
+    "La fuente activa no ofrece la generación/anchura actual del enlace de esta tarjeta."
+  ],
+  [
+    "unavailable",
+    "nicht verfügbar",
+    "indisponible",
+    "no disponible"
+  ],
+  [
+    "Busiest hardware engine after summing process instances per engine; approximately one-second sample interval.",
+    "Am stärksten ausgelastete Hardware-Engine nach Summierung der Prozessinstanzen je Engine; Messintervall etwa eine Sekunde.",
+    "Moteur matériel le plus sollicité après addition des instances de processus par moteur ; intervalle d’environ une seconde.",
+    "Motor de hardware más ocupado tras sumar las instancias de procesos por motor; intervalo de aproximadamente un segundo."
+  ],
+  [
+    "No valid counter instance for this adapter; requires a supporting WDDM driver",
+    "Keine gültige Zählerinstanz für diese Grafikkarte; benötigt einen unterstützenden WDDM-Treiber",
+    "Aucune instance de compteur valide pour cette carte ; nécessite un pilote WDDM compatible",
+    "No hay una instancia de contador válida para esta tarjeta; requiere un controlador WDDM compatible"
+  ],
+  [
+    "GPU performance counter objects are unavailable; requires a supporting WDDM driver",
+    "GPU-Leistungszähler nicht verfügbar; benötigt einen unterstützenden WDDM-Treiber",
+    "Compteurs de performances GPU indisponibles ; nécessite un pilote WDDM compatible",
+    "Contadores de rendimiento GPU no disponibles; requiere un controlador WDDM compatible"
+  ],
+  [
+    "GPU counter read 0x{0}",
+    "GPU-Zählerabfrage 0x{0}",
+    "Lecture du compteur GPU 0x{0}",
+    "Lectura del contador GPU 0x{0}"
+  ],
+  [
+    "GPU counter buffer exceeds safety bound",
+    "GPU-Zählerpuffer überschreitet die Sicherheitsgrenze",
+    "Le tampon du compteur GPU dépasse la limite de sécurité",
+    "El búfer del contador GPU supera el límite de seguridad"
+  ],
+  [
+    "GPU counter array 0x{0}",
+    "GPU-Zählerarray 0x{0}",
+    "Tableau de compteurs GPU 0x{0}",
+    "Matriz de contadores GPU 0x{0}"
+  ],
+  [
+    "GPU counter instances changed repeatedly during collection",
+    "GPU-Zählerinstanzen änderten sich wiederholt während der Erfassung",
+    "Les instances des compteurs GPU ont changé plusieurs fois pendant la collecte",
+    "Las instancias de contadores GPU cambiaron varias veces durante la recopilación"
+  ],
+  [
+    "GPU counter count exceeds buffer or safety bound",
+    "Anzahl der GPU-Zähler überschreitet Puffer oder Sicherheitsgrenze",
+    "Le nombre de compteurs GPU dépasse le tampon ou la limite de sécurité",
+    "El número de contadores GPU supera el búfer o el límite de seguridad"
+  ],
+  [
+    "GPU counter name points outside its string buffer",
+    "GPU-Zählername verweist außerhalb seines Zeichenkettenpuffers",
+    "Le nom du compteur GPU pointe hors du tampon de chaînes",
+    "El nombre del contador GPU apunta fuera del búfer de cadenas"
+  ],
+  [
+    "GPU counter name is unterminated or exceeds 4095 UTF-16 units",
+    "GPU-Zählername ohne Abschluss oder länger als 4095 UTF-16-Einheiten",
+    "Nom du compteur GPU non terminé ou dépassant 4095 unités UTF-16",
+    "Nombre del contador GPU sin terminar o superior a 4095 unidades UTF-16"
+  ],
+  [
+    "GPU counter names exceed safety bound",
+    "GPU-Zählernamen überschreiten die Sicherheitsgrenze",
+    "Les noms des compteurs GPU dépassent la limite de sécurité",
+    "Los nombres de contadores GPU superan el límite de seguridad"
+  ],
+  [
+    "nvml.dll not found in System32 or NVIDIA Corporation/NVSMI. Install a supported NVIDIA display driver to enable vendor sensors.",
+    "nvml.dll weder in System32 noch in NVIDIA Corporation/NVSMI gefunden. Ein unterstützter NVIDIA-Grafiktreiber aktiviert Herstellersensoren.",
+    "nvml.dll introuvable dans System32 ou NVIDIA Corporation/NVSMI. Installez un pilote graphique NVIDIA compatible pour activer les capteurs du fabricant.",
+    "No se encontró nvml.dll en System32 ni en NVIDIA Corporation/NVSMI. Instala un controlador gráfico NVIDIA compatible para activar los sensores del fabricante."
+  ],
+  [
+    "NVML returned a null device handle",
+    "NVML lieferte ein leeres Gerätehandle",
+    "NVML a renvoyé un handle de périphérique nul",
+    "NVML devolvió un identificador de dispositivo nulo"
+  ],
+  [
+    "NVML returned a malformed PCI identifier",
+    "NVML lieferte eine ungültige PCI-Kennung",
+    "NVML a renvoyé un identifiant PCI mal formé",
+    "NVML devolvió un identificador PCI mal formado"
+  ],
+  [
+    "NVML PCI text and numeric identity disagree",
+    "NVML-PCI-Text und numerische Kennung stimmen nicht überein",
+    "Le texte PCI et l’identifiant numérique NVML ne correspondent pas",
+    "El texto PCI y la identidad numérica de NVML no coinciden"
+  ],
+  [
+    "NVML device topology changed during enumeration; association refused",
+    "NVML-Gerätetopologie während der Erkennung geändert; Zuordnung abgelehnt",
+    "Topologie des périphériques NVML modifiée pendant l’énumération ; association refusée",
+    "La topología de dispositivos NVML cambió durante la enumeración; asociación rechazada"
+  ],
+  [
+    "No Windows PCI address; refusing to match sensors by name or enumeration index",
+    "Keine Windows-PCI-Adresse; Sensorzuordnung über Namen oder Erkennungsreihenfolge abgelehnt",
+    "Aucune adresse PCI Windows ; association des capteurs par nom ou index refusée",
+    "Sin dirección PCI de Windows; se rechaza asociar sensores por nombre o índice"
+  ],
+  [
+    "Invalid Windows PCI address",
+    "Ungültige Windows-PCI-Adresse",
+    "Adresse PCI Windows invalide",
+    "Dirección PCI de Windows no válida"
+  ],
+  [
+    "Windows system directory unavailable: {0}",
+    "Windows-Systemverzeichnis nicht verfügbar: {0}",
+    "Répertoire système Windows indisponible : {0}",
+    "Directorio del sistema de Windows no disponible: {0}"
+  ],
+  [
+    "No NVML device matches Windows PCI bus/device/function and vendor/device identity",
+    "Kein NVML-Gerät passt zu Windows-PCI-Bus/Gerät/Funktion und Hersteller-/Gerätekennung",
+    "Aucun périphérique NVML ne correspond au bus/périphérique/fonction PCI Windows et à l’identifiant fabricant/périphérique",
+    "Ningún dispositivo NVML coincide con bus/dispositivo/función PCI de Windows e identidad de fabricante/dispositivo"
+  ],
+  [
+    "PCI identity is ambiguous across domains; sensor association refused",
+    "PCI-Kennung über mehrere Domänen mehrdeutig; Sensorzuordnung abgelehnt",
+    "Identité PCI ambiguë entre domaines ; association des capteurs refusée",
+    "Identidad PCI ambigua entre dominios; asociación de sensores rechazada"
+  ],
+  [
+    "NVML device count exceeds 64; partial enumeration cannot prove a unique PCI match",
+    "Mehr als 64 NVML-Geräte; unvollständige Erkennung erlaubt keine eindeutige PCI-Zuordnung",
+    "Plus de 64 périphériques NVML ; une énumération partielle ne prouve pas une correspondance PCI unique",
+    "Más de 64 dispositivos NVML; una enumeración parcial no demuestra una coincidencia PCI única"
+  ],
+  [
+    "NVML device {0} identification failed: {1}; incomplete enumeration cannot prove a unique PCI match",
+    "Identifizierung von NVML-Gerät {0} fehlgeschlagen: {1}; unvollständige Erkennung erlaubt keine eindeutige PCI-Zuordnung",
+    "Échec d’identification du périphérique NVML {0} : {1} ; une énumération incomplète ne prouve pas une correspondance PCI unique",
+    "Falló la identificación del dispositivo NVML {0}: {1}; una enumeración incompleta no demuestra una coincidencia PCI única"
+  ],
+  [
+    "NVML status {0}: {1}",
+    "NVML-Status {0}: {1}",
+    "État NVML {0} : {1}",
+    "Estado NVML {0}: {1}"
+  ],
+  [
+    "not initialized",
+    "nicht initialisiert",
+    "non initialisé",
+    "sin inicializar"
+  ],
+  [
+    "invalid argument",
+    "ungültiges Argument",
+    "argument invalide",
+    "argumento no válido"
+  ],
+  [
+    "not supported by this GPU/driver or API symbol absent",
+    "von dieser GPU/diesem Treiber nicht unterstützt oder API-Symbol fehlt",
+    "non pris en charge par ce GPU/pilote ou symbole API absent",
+    "no compatible con esta GPU/controlador o falta el símbolo de API"
+  ],
+  [
+    "permission required",
+    "Berechtigung erforderlich",
+    "autorisation requise",
+    "se requieren permisos"
+  ],
+  [
+    "object not found",
+    "Objekt nicht gefunden",
+    "objet introuvable",
+    "objeto no encontrado"
+  ],
+  [
+    "NVIDIA driver not loaded",
+    "NVIDIA-Treiber nicht geladen",
+    "pilote NVIDIA non chargé",
+    "controlador NVIDIA no cargado"
+  ],
+  [
+    "library unavailable",
+    "Bibliothek nicht verfügbar",
+    "bibliothèque indisponible",
+    "biblioteca no disponible"
+  ],
+  [
+    "function not implemented by the installed driver",
+    "Funktion im installierten Treiber nicht implementiert",
+    "fonction non implémentée par le pilote installé",
+    "función no implementada por el controlador instalado"
+  ],
+  [
+    "GPU lost",
+    "GPU-Verbindung verloren",
+    "connexion au GPU perdue",
+    "conexión con la GPU perdida"
+  ],
+  [
+    "GPU access blocked by the operating system",
+    "GPU-Zugriff vom Betriebssystem blockiert",
+    "accès au GPU bloqué par le système",
+    "acceso a la GPU bloqueado por el sistema"
+  ],
+  [
+    "driver/library version mismatch",
+    "Treiber-/Bibliotheksversionen stimmen nicht überein",
+    "versions du pilote et de la bibliothèque incompatibles",
+    "versiones del controlador y de la biblioteca incompatibles"
+  ],
+  [
+    "no data",
+    "keine Daten",
+    "aucune donnée",
+    "sin datos"
+  ],
+  [
+    "provider not ready",
+    "Quelle noch nicht bereit",
+    "source non prête",
+    "fuente no preparada"
+  ],
+  [
+    "GPU not found",
+    "GPU nicht gefunden",
+    "GPU introuvable",
+    "GPU no encontrada"
+  ],
+  [
+    "provider call failed",
+    "Quellenabfrage fehlgeschlagen",
+    "échec de l’appel à la source",
+    "falló la llamada a la fuente"
+  ],
+  [
+    "NVML v1 used memory includes driver-reserved and allocated memory; Windows WDDM may not expose this metric.",
+    "NVML-v1-Speicherbelegung enthält Treiberreservierungen und belegten Speicher; Windows WDDM stellt diesen Wert möglicherweise nicht bereit.",
+    "La mémoire utilisée NVML v1 inclut la mémoire réservée par le pilote et allouée ; Windows WDDM peut ne pas fournir cette mesure.",
+    "La memoria usada NVML v1 incluye memoria reservada por el controlador y asignada; Windows WDDM podría no ofrecer esta medición."
+  ],
+  [
+    "… [additional details omitted]",
+    "… [weitere Details ausgelassen]",
+    "… [détails supplémentaires omis]",
+    "… [detalles adicionales omitidos]"
+  ],
+  [
+    "Could not start scan worker: {0}",
+    "Analyseprozess konnte nicht gestartet werden: {0}",
+    "Impossible de démarrer l’analyse : {0}",
+    "No se pudo iniciar el análisis: {0}"
+  ],
+  [
+    "Scan path validation",
+    "Prüfung des Analysepfads",
+    "Validation du chemin d’analyse",
+    "Validación de la ruta del análisis"
+  ],
+  [
+    "Filesystem enumeration + file metadata",
+    "Dateisystemerfassung + Dateimetadaten",
+    "Énumération du système de fichiers + métadonnées",
+    "Enumeración del sistema de archivos + metadatos"
+  ],
+  [
+    "Logical bytes include named data streams and each hard-link path; allocated bytes count each file identity once, attributed to its first scanned path.",
+    "Logische Bytes enthalten benannte Datenströme und jeden Hardlink-Pfad. Die Größe auf dem Datenträger zählt jede Datei einmal und ordnet sie dem zuerst erfassten Pfad zu.",
+    "La taille logique inclut les flux nommés et chaque chemin de lien physique. La taille allouée compte chaque fichier une fois, attribué au premier chemin analysé.",
+    "El tamaño lógico incluye flujos con nombre y cada ruta de enlace físico. El tamaño asignado cuenta cada archivo una vez y lo atribuye a la primera ruta analizada."
+  ],
+  [
+    "Directory data streams are included. Directory indexes, MFT records, security metadata, filesystem journals, snapshots and other volume overhead are excluded. Scanned totals are not volume used space.",
+    "Ordnerdatenströme sind enthalten. Ordnerindizes, MFT-Datensätze, Sicherheitsmetadaten, Dateisystemjournale, Schattenkopien und andere Volume-Verwaltungsdaten sind ausgeschlossen. Analysesummen entsprechen nicht der Volume-Belegung.",
+    "Les flux des dossiers sont inclus. Index, enregistrements MFT, métadonnées de sécurité, journaux, instantanés et autres données de gestion sont exclus. Les totaux ne correspondent pas à l’espace utilisé du volume.",
+    "Se incluyen los flujos de carpetas. Se excluyen índices, registros MFT, metadatos de seguridad, diarios, instantáneas y otros datos de gestión. Los totales no equivalen al espacio usado del volumen."
+  ],
+  [
+    "Live scan, not a filesystem snapshot: files can change or disappear during enumeration. Reparse points and cloud placeholders are excluded without reading file contents.",
+    "Laufende Analyse, kein Dateisystemabbild: Dateien können sich während der Erfassung ändern oder verschwinden. Analysepunkte und Cloudplatzhalter werden ohne Lesen von Dateiinhalten ausgeschlossen.",
+    "Analyse en direct, pas un instantané : les fichiers peuvent changer ou disparaître. Les points d’analyse et espaces réservés cloud sont exclus sans lire le contenu des fichiers.",
+    "Análisis en vivo, no una instantánea: los archivos pueden cambiar o desaparecer. Los puntos de reanálisis y marcadores de nube se excluyen sin leer el contenido de los archivos."
+  ],
+  [
+    "Directory changed into a reparse point or cloud placeholder; not traversed",
+    "Ordner wurde zu einem Analysepunkt oder Cloudplatzhalter; nicht durchsucht",
+    "Le dossier est devenu un point d’analyse ou un espace réservé cloud ; non parcouru",
+    "La carpeta se convirtió en punto de reanálisis o marcador de nube; no se recorrió"
+  ],
+  [
+    "Partial accounting: {0} metadata or enumeration errors. Incomplete entries carry known lower-bound sums; unavailable allocation contributes no bytes and is not a zero measurement.",
+    "Unvollständige Berechnung: {0} Metadaten- oder Erfassungsfehler. Unvollständige Einträge zeigen bekannte Mindestsummen; unbekannte Belegung wird nicht addiert und ist keine Nullmessung.",
+    "Calcul partiel : {0} erreurs de métadonnées ou d’énumération. Les entrées incomplètes indiquent des minima connus ; une allocation inconnue n’ajoute aucun octet et ne signifie pas zéro.",
+    "Cálculo parcial: {0} errores de metadatos o enumeración. Las entradas incompletas muestran mínimos conocidos; una asignación desconocida no suma bytes y no significa cero."
+  ],
+  [
+    "Scan metadata reached the 512 MiB memory budget; remaining entries were not scanned. Scan a smaller folder to continue.",
+    "Analysemetadaten erreichten das Speicherbudget von 512 MiB; übrige Einträge wurden nicht erfasst. Zum Fortfahren einen kleineren Ordner analysieren.",
+    "Les métadonnées ont atteint le budget de 512 MiB ; les éléments restants n’ont pas été analysés. Analysez un dossier plus petit.",
+    "Los metadatos alcanzaron el presupuesto de 512 MiB; no se analizaron las entradas restantes. Analiza una carpeta más pequeña."
+  ],
+  [
+    "Reparse point excluded; target not followed",
+    "Analysepunkt ausgeschlossen; Ziel nicht verfolgt",
+    "Point d’analyse exclu ; cible non suivie",
+    "Punto de reanálisis excluido; destino no seguido"
+  ],
+  [
+    "Cloud/offline placeholder excluded; no hydration requested",
+    "Cloud-/Offlineplatzhalter ausgeschlossen; kein Herunterladen angefordert",
+    "Espace réservé cloud/hors ligne exclu ; aucun téléchargement demandé",
+    "Marcador de nube/sin conexión excluido; no se solicitó su descarga"
+  ],
+  [
+    "Hard-link alias: allocated bytes attributed to another path in this scan",
+    "Zusätzlicher Hardlink: Belegung einem anderen Pfad dieser Analyse zugeordnet",
+    "Lien physique supplémentaire : octets alloués attribués à un autre chemin de l’analyse",
+    "Enlace físico adicional: bytes asignados atribuidos a otra ruta del análisis"
+  ],
+  [
+    "Metadata unavailable: {0}",
+    "Metadaten nicht verfügbar: {0}",
+    "Métadonnées indisponibles : {0}",
+    "Metadatos no disponibles: {0}"
+  ],
+  [
+    "POSIX stat; named stream accounting unavailable on this platform",
+    "POSIX stat; Berechnung benannter Datenströme auf dieser Plattform nicht verfügbar",
+    "POSIX stat ; calcul des flux nommés indisponible sur cette plateforme",
+    "POSIX stat; cálculo de flujos con nombre no disponible en esta plataforma"
+  ],
+  [
+    "Capture destination must be an ordinary directory",
+    "Screenshot-Ziel muss ein gewöhnlicher Ordner sein",
+    "La destination des captures doit être un dossier ordinaire",
+    "El destino de las capturas debe ser una carpeta normal"
+  ],
+  [
+    "Choose a new file name for the output",
+    "Einen neuen Dateinamen für die Ausgabe wählen",
+    "Choisissez un nouveau nom de fichier pour la sortie",
+    "Elige un nombre de archivo nuevo para la salida"
+  ],
+  [
+    "File already exists; choose a new file name. Existing files are never replaced.",
+    "Datei existiert bereits; einen neuen Dateinamen wählen. Vorhandene Dateien werden niemals ersetzt.",
+    "Le fichier existe déjà ; choisissez un nouveau nom. Les fichiers existants ne sont jamais remplacés.",
+    "El archivo ya existe; elige un nombre nuevo. Los archivos existentes nunca se reemplazan."
+  ],
+  [
+    "Output has no parent directory",
+    "Ausgabe hat keinen übergeordneten Ordner",
+    "La sortie n’a pas de dossier parent",
+    "La salida no tiene carpeta superior"
+  ],
+  [
+    "{0}: reparse/symlink or cloud ancestor excluded",
+    "{0}: übergeordneter Analysepunkt/Symlink oder Cloudordner ausgeschlossen",
+    "{0} : parent point d’analyse/lien symbolique ou cloud exclu",
+    "{0}: ancestro de reanálisis/enlace simbólico o nube excluido"
+  ],
+  [
+    "{0}: ancestor is not a directory",
+    "{0}: übergeordnetes Element ist kein Ordner",
+    "{0} : un élément parent n’est pas un dossier",
+    "{0}: un elemento superior no es una carpeta"
+  ],
+  [
+    "Alternate streams and non-filesystem path syntax are not supported",
+    "Alternative Datenströme und Pfadsyntax außerhalb des Dateisystems werden nicht unterstützt",
+    "Flux alternatifs et syntaxe de chemin hors système de fichiers non pris en charge",
+    "No se admiten flujos alternativos ni sintaxis de ruta ajena al sistema de archivos"
+  ],
+  [
+    "Reserved DOS device names are not supported",
+    "Reservierte DOS-Gerätenamen werden nicht unterstützt",
+    "Noms de périphériques DOS réservés non pris en charge",
+    "No se admiten nombres reservados de dispositivos DOS"
+  ],
+  [
+    "Parent traversal in an extended path is not supported",
+    "Wechsel zum übergeordneten Ordner in erweiterten Pfaden nicht unterstützt",
+    "Parcours du parent dans un chemin étendu non pris en charge",
+    "No se admite recorrer la carpeta superior en una ruta extendida"
+  ],
+  [
+    "Allocation and stream metadata unavailable: {0}",
+    "Belegungs- und Datenstrommetadaten nicht verfügbar: {0}",
+    "Métadonnées d’allocation et de flux indisponibles : {0}",
+    "Metadatos de asignación y flujos no disponibles: {0}"
+  ],
+  [
+    "Stable file identity unavailable; physical allocation excluded to avoid double-counting",
+    "Stabile Dateikennung nicht verfügbar; physische Belegung zur Vermeidung von Doppelzählung ausgeschlossen",
+    "Identité de fichier stable indisponible ; allocation physique exclue pour éviter un double comptage",
+    "Identidad de archivo estable no disponible; asignación física excluida para evitar contar dos veces"
+  ],
+  [
+    "Includes {0} named data stream(s)",
+    "Enthält {0} benannte Datenströme",
+    "Inclut {0} flux de données nommés",
+    "Incluye {0} flujos de datos con nombre"
+  ],
+  [
+    "Named stream allocation unverified: {0}",
+    "Belegung benannter Datenströme ungeprüft: {0}",
+    "Allocation des flux nommés non vérifiée : {0}",
+    "Asignación de flujos con nombre sin verificar: {0}"
+  ],
+  [
+    "Named stream allocation unavailable: {0}",
+    "Belegung benannter Datenströme nicht verfügbar: {0}",
+    "Allocation des flux nommés indisponible : {0}",
+    "Asignación de flujos con nombre no disponible: {0}"
+  ],
+  [
+    "Sparse/compressed physical allocation unavailable: {0}",
+    "Physische Belegung von Sparse-/komprimierten Dateien nicht verfügbar: {0}",
+    "Allocation physique des fichiers creux/compressés indisponible : {0}",
+    "Asignación física de archivos dispersos/comprimidos no disponible: {0}"
+  ],
+  [
+    "Sparse/compressed allocation unavailable: {0}",
+    "Belegung von Sparse-/komprimierten Dateien nicht verfügbar: {0}",
+    "Allocation des fichiers creux/compressés indisponible : {0}",
+    "Asignación de archivos dispersos/comprimidos no disponible: {0}"
+  ],
+  [
+    "Allocation unavailable: {0}",
+    "Belegung nicht verfügbar: {0}",
+    "Allocation indisponible : {0}",
+    "Asignación no disponible: {0}"
+  ],
+  [
+    "Named stream enumeration unsupported by this filesystem",
+    "Erfassung benannter Datenströme von diesem Dateisystem nicht unterstützt",
+    "Énumération des flux nommés non prise en charge par ce système de fichiers",
+    "Este sistema de archivos no admite enumerar flujos con nombre"
+  ],
+  [
+    "Named stream metadata unavailable: {0}",
+    "Metadaten benannter Datenströme nicht verfügbar: {0}",
+    "Métadonnées des flux nommés indisponibles : {0}",
+    "Metadatos de flujos con nombre no disponibles: {0}"
+  ],
+  [
+    "Sparse",
+    "Sparse-Datei",
+    "Fichier creux",
+    "Archivo disperso"
+  ],
+  [
+    "NTFS compressed",
+    "NTFS-komprimiert",
+    "Compressé NTFS",
+    "Comprimido NTFS"
+  ],
+  [
+    "Logical stream bytes",
+    "Logische Datenstrombytes",
+    "Octets logiques des flux",
+    "Bytes lógicos de flujos"
+  ],
+  [
+    "Allocated stream bytes",
+    "Belegte Datenstrombytes",
+    "Octets alloués des flux",
+    "Bytes asignados de flujos"
+  ],
+  [
+    "{0} exceed the u64 limit; reported size is a lower bound",
+    "{0} überschreiten die u64-Grenze; die gemeldete Größe ist ein Mindestwert",
+    "{0} dépassent la limite u64 ; la taille indiquée est un minimum",
+    "{0} superan el límite u64; el tamaño indicado es un mínimo"
+  ],
+  [
+    "Updated physical stream bytes exceed the u64 limit; reported allocation is a lower bound",
+    "Aktualisierte physische Datenstrombytes überschreiten die u64-Grenze; gemeldete Belegung ist ein Mindestwert",
+    "Les octets physiques actualisés dépassent la limite u64 ; l’allocation indiquée est un minimum",
+    "Los bytes físicos actualizados superan el límite u64; la asignación indicada es un mínimo"
+  ],
+  [
+    "Physical allocation query returned a negative byte count; this stream's allocation is unavailable",
+    "Abfrage der physischen Belegung lieferte negative Bytezahl; Belegung dieses Datenstroms nicht verfügbar",
+    "La requête d’allocation physique a renvoyé un nombre d’octets négatif ; allocation de ce flux indisponible",
+    "La consulta de asignación física devolvió bytes negativos; la asignación de este flujo no está disponible"
+  ],
+  [
+    "Stream offset out of bounds",
+    "Datenstromoffset außerhalb des gültigen Bereichs",
+    "Décalage du flux hors limites",
+    "Desplazamiento del flujo fuera de límites"
+  ],
+  [
+    "Truncated stream metadata",
+    "Datenstrommetadaten abgeschnitten",
+    "Métadonnées de flux tronquées",
+    "Metadatos de flujo truncados"
+  ],
+  [
+    "Stream length overflow",
+    "Datenstromlängenüberlauf",
+    "Dépassement de longueur du flux",
+    "Desbordamiento de longitud del flujo"
+  ],
+  [
+    "Invalid stream metadata",
+    "Ungültige Datenstrommetadaten",
+    "Métadonnées de flux invalides",
+    "Metadatos de flujo no válidos"
+  ],
+  [
+    "Invalid next stream offset",
+    "Ungültiger Offset des nächsten Datenstroms",
+    "Décalage du flux suivant invalide",
+    "Desplazamiento del siguiente flujo no válido"
+  ],
+  [
+    "Invalid stream name",
+    "Ungültiger Datenstromname",
+    "Nom de flux invalide",
+    "Nombre de flujo no válido"
+  ],
+  [
+    "Stream offset overflow",
+    "Datenstromoffsetüberlauf",
+    "Dépassement du décalage du flux",
+    "Desbordamiento del desplazamiento del flujo"
+  ],
+  [
+    "MFT fast path unavailable: {0}. Standard enumeration used; no elevation requested.",
+    "Schnelle MFT-Erfassung nicht verfügbar: {0}. Standarderfassung verwendet; keine erhöhten Rechte angefordert.",
+    "Analyse MFT rapide indisponible : {0}. Énumération standard utilisée ; aucun privilège supplémentaire demandé.",
+    "Análisis MFT rápido no disponible: {0}. Se usa enumeración estándar; no se solicitaron privilegios adicionales."
+  ],
+  [
+    "NTFS MFT index + verified stream metadata",
+    "NTFS-MFT-Index + geprüfte Datenstrommetadaten",
+    "Index MFT NTFS + métadonnées de flux vérifiées",
+    "Índice MFT NTFS + metadatos de flujos verificados"
+  ],
+  [
+    "MFT index is a live hierarchy, not a snapshot. Hard-link names are reconciled explicitly. NTFS reserved metadata records are excluded; inaccessible and changing entries remain partial.",
+    "Der MFT-Index ist eine laufende Hierarchie, kein Abbild. Hardlink-Namen werden ausdrücklich abgeglichen. Reservierte NTFS-Metadatensätze sind ausgeschlossen; unzugängliche und veränderte Einträge bleiben unvollständig.",
+    "L’index MFT est une arborescence en direct, pas un instantané. Les noms des liens physiques sont rapprochés explicitement. Les métadonnées NTFS réservées sont exclues ; les entrées inaccessibles ou changeantes restent partielles.",
+    "El índice MFT es una jerarquía en vivo, no una instantánea. Los nombres de enlaces físicos se concilian explícitamente. Se excluyen los metadatos NTFS reservados; las entradas inaccesibles o cambiantes quedan parciales."
+  ],
+  [
+    "Cycle in MFT directory references; branch excluded",
+    "Zyklus in MFT-Ordnerverweisen; Zweig ausgeschlossen",
+    "Cycle dans les références de dossiers MFT ; branche exclue",
+    "Ciclo en referencias de carpetas MFT; rama excluida"
+  ],
+  [
+    "MFT hierarchy paths reached the 128 MiB memory budget; remaining entries were not scanned. Scan a smaller folder to continue.",
+    "MFT-Hierarchiepfade erreichten das Speicherbudget von 128 MiB; übrige Einträge nicht erfasst. Zum Fortfahren einen kleineren Ordner analysieren.",
+    "Les chemins MFT ont atteint le budget de 128 MiB ; les éléments restants n’ont pas été analysés. Analysez un dossier plus petit.",
+    "Las rutas MFT alcanzaron el presupuesto de 128 MiB; no se analizaron las entradas restantes. Analiza una carpeta más pequeña."
+  ],
+  [
+    "MFT index excluded {0} descendant records beneath reparse/cloud directories.",
+    "MFT-Index schloss {0} untergeordnete Datensätze in Analysepunkt-/Cloudordnern aus.",
+    "L’index MFT a exclu {0} enregistrements sous des dossiers cloud/points d’analyse.",
+    "El índice MFT excluyó {0} registros bajo carpetas de nube/puntos de reanálisis."
+  ],
+  [
+    "MFT hierarchy has {0} unreachable records beneath inaccessible or missing directory references; totals cover reachable entries only",
+    "MFT-Hierarchie enthält {0} unerreichbare Datensätze unter unzugänglichen oder fehlenden Ordnerverweisen; Summen enthalten nur erreichbare Einträge",
+    "L’arborescence MFT contient {0} enregistrements inaccessibles sous des références de dossiers absentes ou inaccessibles ; seuls les éléments accessibles sont comptés",
+    "La jerarquía MFT tiene {0} registros inaccesibles bajo referencias de carpetas ausentes o inaccesibles; los totales solo incluyen entradas accesibles"
+  ],
+  [
+    "Hard-link parent unavailable: {0}",
+    "Übergeordneter Hardlink-Ordner nicht verfügbar: {0}",
+    "Dossier parent du lien physique indisponible : {0}",
+    "Carpeta superior del enlace físico no disponible: {0}"
+  ],
+  [
+    "Additional hard-link names unavailable: {0}",
+    "Weitere Hardlink-Namen nicht verfügbar: {0}",
+    "Noms supplémentaires de liens physiques indisponibles : {0}",
+    "Nombres adicionales de enlaces físicos no disponibles: {0}"
+  ],
+  [
+    "Hardware worker stopped unexpectedly",
+    "Hardwareabfrage unerwartet beendet",
+    "Collecte du matériel interrompue inopinément",
+    "La recopilación de hardware se detuvo inesperadamente"
+  ],
+  [
+    "Could not start hardware worker: {0}",
+    "Hardwareabfrage konnte nicht gestartet werden: {0}",
+    "Impossible de démarrer la collecte du matériel : {0}",
+    "No se pudo iniciar la recopilación de hardware: {0}"
+  ],
+  [
+    "Hardware worker stopped; readings may be stale",
+    "Hardwareabfrage beendet; Messwerte können veraltet sein",
+    "Collecte du matériel arrêtée ; les mesures peuvent être obsolètes",
+    "Recopilación de hardware detenida; las mediciones pueden estar desactualizadas"
+  ],
+  [
+    "Scan worker stopped before completion; results are incomplete",
+    "Analyse vorzeitig beendet; Ergebnisse unvollständig",
+    "Analyse interrompue avant la fin ; résultats incomplets",
+    "El análisis se detuvo antes de terminar; resultados incompletos"
+  ],
+  [
+    "Background task stopped before completion",
+    "Hintergrundaufgabe vorzeitig beendet",
+    "Tâche de fond interrompue avant la fin",
+    "La tarea en segundo plano se detuvo antes de terminar"
+  ],
+  [
+    "Saved {0}",
+    "Gespeichert: {0}",
+    "Enregistré : {0}",
+    "Guardado: {0}"
+  ],
+  [
+    "Export failed: {0}",
+    "Export fehlgeschlagen: {0}",
+    "Échec de l’export : {0}",
+    "Falló la exportación: {0}"
+  ],
+  [
+    "Enter a folder or drive path",
+    "Ordner- oder Laufwerkspfad eingeben",
+    "Saisissez un chemin de dossier ou de lecteur",
+    "Introduce una ruta de carpeta o unidad"
+  ],
+  [
+    "Could not start background task: {0}",
+    "Hintergrundaufgabe konnte nicht gestartet werden: {0}",
+    "Impossible de démarrer la tâche de fond : {0}",
+    "No se pudo iniciar la tarea en segundo plano: {0}"
+  ],
+  [
+    "Aggregate exceeds the u64 byte/count range; totals are saturated lower bounds",
+    "Summe überschreitet den u64-Byte-/Zählbereich; Gesamtsummen sind gesättigte Mindestwerte",
+    "Le total dépasse la plage u64 ; les totaux sont des minima saturés",
+    "El total supera el rango u64; los totales son mínimos saturados"
+  ],
+  [
+    "Screenshot export worker failed",
+    "Screenshot-Export fehlgeschlagen",
+    "Échec de l’export des captures",
+    "Falló la exportación de capturas"
+  ],
+  [
+    "Hardware sampling failed during capture: {0}",
+    "Hardwaremessung während der Aufnahme fehlgeschlagen: {0}",
+    "Échec des mesures matérielles pendant la capture : {0}",
+    "Falló la medición de hardware durante la captura: {0}"
+  ],
+  [
+    "Timed out waiting for screenshot pixels",
+    "Zeitüberschreitung beim Warten auf Screenshot-Pixel",
+    "Délai dépassé en attendant les pixels de capture",
+    "Tiempo de espera agotado para los píxeles de captura"
+  ],
+  [
+    "Timed out writing screenshot",
+    "Zeitüberschreitung beim Schreiben des Screenshots",
+    "Délai dépassé lors de l’écriture de la capture",
+    "Tiempo agotado al escribir la captura"
+  ],
+  [
+    "Timed out waiting for hardware samples",
+    "Zeitüberschreitung beim Warten auf Hardwaremesswerte",
+    "Délai dépassé en attendant les mesures matérielles",
+    "Tiempo de espera agotado para las mediciones de hardware"
+  ],
+  [
+    "Could not start screenshot worker: {0}",
+    "Screenshot-Prozess konnte nicht gestartet werden: {0}",
+    "Impossible de démarrer la capture : {0}",
+    "No se pudo iniciar la captura: {0}"
+  ]
+]

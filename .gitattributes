@@ -1,0 +1,8 @@
+* text=auto eol=lf
+*.png -text
+*.ico -text
+
+# Keep the upstream license notice byte-identical across Windows checkouts.
+docs/toolchain-notices/rust-1.99.0/COPYRIGHT-library.html -text -whitespace
+# Original license text may contain upstream trailing spaces.
+docs/third-party-licenses.txt -whitespace

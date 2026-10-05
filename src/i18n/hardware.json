@@ -1,0 +1,626 @@
+[
+  [
+    "Model",
+    "Modell",
+    "Modèle",
+    "Modelo"
+  ],
+  [
+    "Vendor",
+    "Hersteller",
+    "Fabricant",
+    "Fabricante"
+  ],
+  [
+    "Architecture",
+    "Architektur",
+    "Architecture",
+    "Arquitectura"
+  ],
+  [
+    "Physical cores",
+    "Physische Kerne",
+    "Cœurs physiques",
+    "Núcleos físicos"
+  ],
+  [
+    "Windows usable memory",
+    "Von Windows nutzbarer Speicher",
+    "Mémoire utilisable par Windows",
+    "Memoria utilizable por Windows"
+  ],
+  [
+    "Build",
+    "Build",
+    "Build",
+    "Compilación"
+  ],
+  [
+    "Host",
+    "Computername",
+    "Nom de l’ordinateur",
+    "Nombre del equipo"
+  ],
+  [
+    "System architecture",
+    "Systemarchitektur",
+    "Architecture du système",
+    "Arquitectura del sistema"
+  ],
+  [
+    "Core voltage",
+    "Kernspannung",
+    "Tension du cœur",
+    "Voltaje del núcleo"
+  ],
+  [
+    "Package power",
+    "CPU-Leistungsaufnahme",
+    "Puissance du processeur",
+    "Potencia del procesador"
+  ],
+  [
+    "Channel mode",
+    "Kanalmodus",
+    "Mode des canaux",
+    "Modo de canales"
+  ],
+  [
+    "SPD / timings / XMP / EXPO",
+    "SPD / Timings / XMP / EXPO",
+    "SPD / timings / XMP / EXPO",
+    "SPD / latencias / XMP / EXPO"
+  ],
+  [
+    "Family / model / stepping",
+    "Familie / Modell / Stepping",
+    "Famille / modèle / stepping",
+    "Familia / modelo / stepping"
+  ],
+  [
+    "Instruction sets (hardware)",
+    "Befehlssätze (Hardware)",
+    "Jeux d’instructions (matériel)",
+    "Conjuntos de instrucciones (hardware)"
+  ],
+  [
+    "Nominal frequency",
+    "Nennfrequenz",
+    "Fréquence nominale",
+    "Frecuencia nominal"
+  ],
+  [
+    "Maximum nominal frequency",
+    "Maximale Nennfrequenz",
+    "Fréquence nominale maximale",
+    "Frecuencia nominal máxima"
+  ],
+  [
+    "Bus frequency",
+    "Busfrequenz",
+    "Fréquence du bus",
+    "Frecuencia del bus"
+  ],
+  [
+    "Cache capacity",
+    "Cache-Kapazität",
+    "Capacité du cache",
+    "Capacidad de caché"
+  ],
+  [
+    "L{0} data cache",
+    "L{0}-Datencache",
+    "Cache de données L{0}",
+    "Caché de datos L{0}"
+  ],
+  [
+    "L{0} instruction cache",
+    "L{0}-Befehlscache",
+    "Cache d’instructions L{0}",
+    "Caché de instrucciones L{0}"
+  ],
+  [
+    "L{0} unified cache",
+    "L{0}-gemeinsamer Cache",
+    "Cache unifié L{0}",
+    "Caché unificada L{0}"
+  ],
+  [
+    "{0} · {1}-way · shared by ≤{2} threads",
+    "{0} · {1}-fach assoziativ · von ≤{2} Threads geteilt",
+    "{0} · {1} voies · partagé par ≤{2} threads",
+    "{0} · {1} vías · compartida por ≤{2} hilos"
+  ],
+  [
+    "BIOS vendor",
+    "BIOS-Hersteller",
+    "Fabricant du BIOS",
+    "Fabricante del BIOS"
+  ],
+  [
+    "BIOS version",
+    "BIOS-Version",
+    "Version du BIOS",
+    "Versión del BIOS"
+  ],
+  [
+    "BIOS date",
+    "BIOS-Datum",
+    "Date du BIOS",
+    "Fecha del BIOS"
+  ],
+  [
+    "Manufacturer",
+    "Hersteller",
+    "Fabricant",
+    "Fabricante"
+  ],
+  [
+    "Revision",
+    "Revision",
+    "Révision",
+    "Revisión"
+  ],
+  [
+    "Socket",
+    "Sockel",
+    "Socket",
+    "Zócalo"
+  ],
+  [
+    "Firmware configured frequency",
+    "In der Firmware eingestellte Frequenz",
+    "Fréquence configurée dans le micrologiciel",
+    "Frecuencia configurada en el firmware"
+  ],
+  [
+    "Locator",
+    "Steckplatz",
+    "Emplacement",
+    "Ranura"
+  ],
+  [
+    "Bank",
+    "Speicherbank",
+    "Banque",
+    "Banco"
+  ],
+  [
+    "Part",
+    "Teilenummer",
+    "Référence",
+    "Referencia"
+  ],
+  [
+    "Type",
+    "Typ",
+    "Type",
+    "Tipo"
+  ],
+  [
+    "Rated transfer rate",
+    "Nenntransferrate",
+    "Débit nominal",
+    "Tasa de transferencia nominal"
+  ],
+  [
+    "Configured transfer rate",
+    "Eingestellte Transferrate",
+    "Débit configuré",
+    "Tasa de transferencia configurada"
+  ],
+  [
+    "Data width",
+    "Datenbreite",
+    "Largeur des données",
+    "Ancho de datos"
+  ],
+  [
+    "Installed capacity",
+    "Installierte Kapazität",
+    "Capacité installée",
+    "Capacidad instalada"
+  ],
+  [
+    "bits",
+    "Bit",
+    "bits",
+    "bits"
+  ],
+  [
+    "lanes",
+    "Lanes",
+    "lignes",
+    "carriles"
+  ],
+  [
+    "SMBIOS type {0}",
+    "SMBIOS-Typ {0}",
+    "Type SMBIOS {0}",
+    "Tipo SMBIOS {0}"
+  ],
+  [
+    "PCI address",
+    "PCI-Adresse",
+    "Adresse PCI",
+    "Dirección PCI"
+  ],
+  [
+    "Motherboard / BIOS",
+    "Mainboard / BIOS",
+    "Carte mère / BIOS",
+    "Placa base / BIOS"
+  ],
+  [
+    "Video BIOS",
+    "Grafik-BIOS",
+    "BIOS vidéo",
+    "BIOS de vídeo"
+  ],
+  [
+    "Architecture / video BIOS",
+    "Architektur / Grafik-BIOS",
+    "Architecture / BIOS vidéo",
+    "Arquitectura / BIOS de vídeo"
+  ],
+  [
+    "Maximum PCIe generation",
+    "Maximale PCIe-Generation",
+    "Génération PCIe maximale",
+    "Generación PCIe máxima"
+  ],
+  [
+    "Maximum PCIe width",
+    "Maximale PCIe-Anbindung",
+    "Largeur PCIe maximale",
+    "Ancho PCIe máximo"
+  ],
+  [
+    "Other",
+    "Sonstige",
+    "Autres",
+    "Otros"
+  ],
+  [
+    "Vendor / device ID",
+    "Hersteller- / Gerätekennung",
+    "Identifiant fabricant / périphérique",
+    "ID de fabricante / dispositivo"
+  ],
+  [
+    "Subsystem / revision",
+    "Subsystem / Revision",
+    "Sous-système / révision",
+    "Subsistema / revisión"
+  ],
+  [
+    "Adapter type",
+    "Grafikkartentyp",
+    "Type de carte",
+    "Tipo de tarjeta"
+  ],
+  [
+    "Software renderer",
+    "Software-Renderer",
+    "Rendu logiciel",
+    "Renderizador por software"
+  ],
+  [
+    "Hardware adapter",
+    "Hardware-Grafikkarte",
+    "Carte matérielle",
+    "Tarjeta de hardware"
+  ],
+  [
+    "Dedicated VRAM capacity",
+    "Dedizierter Grafikspeicher",
+    "Capacité VRAM dédiée",
+    "Capacidad de VRAM dedicada"
+  ],
+  [
+    "Dedicated system memory",
+    "Dedizierter Systemspeicher",
+    "Mémoire système dédiée",
+    "Memoria del sistema dedicada"
+  ],
+  [
+    "Shared system memory limit",
+    "Limit des geteilten Systemspeichers",
+    "Limite de mémoire système partagée",
+    "Límite de memoria del sistema compartida"
+  ],
+  [
+    "Driver version",
+    "Treiberversion",
+    "Version du pilote",
+    "Versión del controlador"
+  ],
+  [
+    "Core efficiency classes",
+    "Kerneffizienzklassen",
+    "Classes d’efficacité des cœurs",
+    "Clases de eficiencia de los núcleos"
+  ],
+  [
+    "Class {0}: {1} cores",
+    "Klasse {0}: {1} Kerne",
+    "Classe {0} : {1} cœurs",
+    "Clase {0}: {1} núcleos"
+  ],
+  [
+    "Dedicated memory used",
+    "Belegter dedizierter Speicher",
+    "Mémoire dédiée utilisée",
+    "Memoria dedicada usada"
+  ],
+  [
+    "Shared memory used",
+    "Belegter geteilter Speicher",
+    "Mémoire partagée utilisée",
+    "Memoria compartida usada"
+  ],
+  [
+    "Process local usage",
+    "Lokaler Speicher dieses Prozesses",
+    "Mémoire locale de ce processus",
+    "Memoria local de este proceso"
+  ],
+  [
+    "Process non-local usage",
+    "Nichtlokaler Speicher dieses Prozesses",
+    "Mémoire non locale de ce processus",
+    "Memoria no local de este proceso"
+  ],
+  [
+    "Process local budget",
+    "Lokales Speicherbudget dieses Prozesses",
+    "Budget mémoire local de ce processus",
+    "Presupuesto de memoria local de este proceso"
+  ],
+  [
+    "Process non-local budget",
+    "Nichtlokales Speicherbudget dieses Prozesses",
+    "Budget mémoire non local de ce processus",
+    "Presupuesto de memoria no local de este proceso"
+  ],
+  [
+    "Power (driver percentage)",
+    "Leistungsaufnahme (Treiber-Prozentwert)",
+    "Puissance (pourcentage du pilote)",
+    "Potencia (porcentaje del controlador)"
+  ],
+  [
+    "Memory clock",
+    "Speichertakt",
+    "Fréquence mémoire",
+    "Frecuencia de memoria"
+  ],
+  [
+    "Engine {0} clock",
+    "Takt der Engine {0}",
+    "Fréquence du moteur {0}",
+    "Frecuencia del motor {0}"
+  ],
+  [
+    "Engine {0} voltage",
+    "Spannung der Engine {0}",
+    "Tension du moteur {0}",
+    "Voltaje del motor {0}"
+  ],
+  [
+    "NVIDIA provider",
+    "NVIDIA-Sensorquelle",
+    "Source NVIDIA",
+    "Fuente NVIDIA"
+  ],
+  [
+    "PCIe generation",
+    "PCIe-Generation",
+    "Génération PCIe",
+    "Generación PCIe"
+  ],
+  [
+    "PCIe width",
+    "PCIe-Anbindung",
+    "Largeur PCIe",
+    "Ancho PCIe"
+  ],
+  [
+    "NVIDIA sensors",
+    "NVIDIA-Sensoren",
+    "Capteurs NVIDIA",
+    "Sensores NVIDIA"
+  ],
+  [
+    "Sensor binding",
+    "Sensorzuordnung",
+    "Association des capteurs",
+    "Asociación de sensores"
+  ],
+  [
+    "Physical device memory capacity",
+    "Physische Gerätespeicherkapazität",
+    "Capacité mémoire physique du périphérique",
+    "Capacidad de memoria física del dispositivo"
+  ],
+  [
+    "GPU core count",
+    "Anzahl GPU-Kerne",
+    "Nombre de cœurs GPU",
+    "Número de núcleos GPU"
+  ],
+  [
+    "Memory bus width",
+    "Speicherbusbreite",
+    "Largeur du bus mémoire",
+    "Ancho del bus de memoria"
+  ],
+  [
+    "NVIDIA video BIOS",
+    "NVIDIA-Grafik-BIOS",
+    "BIOS vidéo NVIDIA",
+    "BIOS de vídeo NVIDIA"
+  ],
+  [
+    "Memory controller load",
+    "Speichercontrollerauslastung",
+    "Charge du contrôleur mémoire",
+    "Carga del controlador de memoria"
+  ],
+  [
+    "Graphics clock",
+    "Grafiktakt",
+    "Fréquence graphique",
+    "Frecuencia gráfica"
+  ],
+  [
+    "Power",
+    "Leistungsaufnahme",
+    "Puissance",
+    "Potencia"
+  ],
+  [
+    "Fan",
+    "Lüfter",
+    "Ventilateur",
+    "Ventilador"
+  ],
+  [
+    "Fan speed",
+    "Lüfterdrehzahl",
+    "Vitesse du ventilateur",
+    "Velocidad del ventilador"
+  ],
+  [
+    "NVIDIA memory allocated + reserved",
+    "NVIDIA-Speicher belegt + reserviert",
+    "Mémoire NVIDIA allouée + réservée",
+    "Memoria NVIDIA asignada + reservada"
+  ],
+  [
+    "CPU digital thermal sensors",
+    "Digitale CPU-Temperatursensoren",
+    "Capteurs thermiques numériques du processeur",
+    "Sensores térmicos digitales de CPU"
+  ],
+  [
+    "CPU voltage sensors",
+    "CPU-Spannungssensoren",
+    "Capteurs de tension du processeur",
+    "Sensores de voltaje de CPU"
+  ],
+  [
+    "CPU energy counters",
+    "CPU-Energiezähler",
+    "Compteurs d’énergie du processeur",
+    "Contadores de energía de CPU"
+  ],
+  [
+    "Memory controller",
+    "Speichercontroller",
+    "Contrôleur mémoire",
+    "Controlador de memoria"
+  ],
+  [
+    "SPD / memory controller",
+    "SPD / Speichercontroller",
+    "SPD / contrôleur mémoire",
+    "SPD / controlador de memoria"
+  ],
+  [
+    "Executable target",
+    "Zielarchitektur der Anwendung",
+    "Architecture cible de l’exécutable",
+    "Arquitectura de destino del ejecutable"
+  ],
+  [
+    "CPUID brand string",
+    "CPUID-Modellbezeichnung",
+    "Nom du modèle CPUID",
+    "Nombre del modelo CPUID"
+  ],
+  [
+    "CPUID hardware support; OS enablement not implied",
+    "CPUID-Hardwareunterstützung; Aktivierung durch das Betriebssystem nicht vorausgesetzt",
+    "Prise en charge matérielle CPUID ; activation par le système non garantie",
+    "Compatibilidad de hardware CPUID; no implica activación por el sistema"
+  ],
+  [
+    "CPUID leaf 16h; nominal, not measured",
+    "CPUID-Blatt 16h; Nennwert, nicht gemessen",
+    "Feuille CPUID 16h ; valeur nominale, non mesurée",
+    "Hoja CPUID 16h; valor nominal, no medido"
+  ],
+  [
+    "CPUID {0}h; per cache instance",
+    "CPUID {0}h; je Cache-Instanz",
+    "CPUID {0}h ; par instance de cache",
+    "CPUID {0}h; por instancia de caché"
+  ],
+  [
+    "SMBIOS {0}.{1} / GetSystemFirmwareTable; firmware-reported",
+    "SMBIOS {0}.{1} / GetSystemFirmwareTable; von der Firmware gemeldet",
+    "SMBIOS {0}.{1} / GetSystemFirmwareTable ; indiqué par le micrologiciel",
+    "SMBIOS {0}.{1} / GetSystemFirmwareTable; indicado por el firmware"
+  ],
+  [
+    "Windows processor topology / sysinfo",
+    "Windows-Prozessortopologie / sysinfo",
+    "Topologie du processeur Windows / sysinfo",
+    "Topología del procesador de Windows / sysinfo"
+  ],
+  [
+    "Windows CPU times / sysinfo",
+    "Windows-CPU-Zeiten / sysinfo",
+    "Temps processeur Windows / sysinfo",
+    "Tiempos de CPU de Windows / sysinfo"
+  ],
+  [
+    "Windows processor power information",
+    "Windows-Prozessorleistungsinformationen",
+    "Informations d’alimentation du processeur Windows",
+    "Información de energía del procesador de Windows"
+  ],
+  [
+    "Windows WDDM performance counters",
+    "Windows-WDDM-Leistungszähler",
+    "Compteurs de performances WDDM Windows",
+    "Contadores de rendimiento WDDM de Windows"
+  ],
+  [
+    "DXGI; capacity, not usage",
+    "DXGI; Kapazität, nicht Belegung",
+    "DXGI ; capacité, pas utilisation",
+    "DXGI; capacidad, no uso"
+  ],
+  [
+    "DXGI; maximum share, not reserved or used",
+    "DXGI; maximal teilbar, nicht reserviert oder belegt",
+    "DXGI ; partage maximal, ni réservé ni utilisé",
+    "DXGI; máximo compartible, no reservado ni usado"
+  ],
+  [
+    "DXGI; stable for the Windows boot session",
+    "DXGI; während der Windows-Sitzung stabil",
+    "DXGI ; stable pendant la session Windows",
+    "DXGI; estable durante la sesión de Windows"
+  ],
+  [
+    "DXGI QueryVideoMemoryInfo; this process only",
+    "DXGI QueryVideoMemoryInfo; nur dieser Prozess",
+    "DXGI QueryVideoMemoryInfo ; ce processus uniquement",
+    "DXGI QueryVideoMemoryInfo; solo este proceso"
+  ],
+  [
+    "Unique PCI bus/device/function + vendor/device match",
+    "Eindeutige Zuordnung über PCI-Bus/Gerät/Funktion und Hersteller/Gerät",
+    "Correspondance unique du bus/périphérique/fonction PCI et du fabricant/périphérique",
+    "Coincidencia única de bus/dispositivo/función PCI y fabricante/dispositivo"
+  ],
+  [
+    "GetLogicalProcessorInformationEx; higher class = higher relative performance",
+    "GetLogicalProcessorInformationEx; höhere Klasse = höhere relative Leistung",
+    "GetLogicalProcessorInformationEx ; classe supérieure = performances relatives supérieures",
+    "GetLogicalProcessorInformationEx; clase superior = mayor rendimiento relativo"
+  ]
+]

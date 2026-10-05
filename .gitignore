@@ -1,0 +1,55 @@
+# Build output and locally generated packages.
+/target/
+/dist/
+*.pdb
+*.ilk
+*.exp
+*.exe
+*.dll
+*.sys
+*.msi
+*.msix
+*.zip
+*.7z
+*.bundle
+
+# Local reports, downloaded tools, captures and scratch work.
+/artifacts/
+/output/
+/tools/
+/tmp/
+/private/
+/local/
+/coverage/
+*.log
+*.dmp
+*.profraw
+*.profdata
+lcov.info
+
+# Credentials and local configuration; safe templates may be committed.
+.env
+.env.*
+!.env.example
+!.env.*.example
+*.pfx
+*.p12
+*.key
+*.pem
+/credentials.json
+
+# Per-user editor and operating-system state.
+/.vs/
+/.idea/
+/.vscode/
+*.suo
+*.user
+*.rs.bk
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Cargo.lock, .cargo/config.toml, source artwork and docs/screenshots stay tracked.

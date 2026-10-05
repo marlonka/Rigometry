@@ -1,0 +1,40 @@
+name: Bug report
+description: Report incorrect behavior or a visual problem.
+body:
+  - type: markdown
+    attributes:
+      value: "For security issues, follow SECURITY.md. Remove personal paths, file names and device identifiers before sharing logs or screenshots."
+  - type: input
+    id: version
+    attributes:
+      label: Rigometry version
+      placeholder: "Version from Settings or commit SHA"
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Windows version and relevant hardware
+      description: Include GPU/driver for sensor issues, filesystem for scan issues, or display scale for layout issues.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Use a small disposable folder for storage reproductions.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Include the exact error or a redacted screenshot if useful.
+    validations:
+      required: true

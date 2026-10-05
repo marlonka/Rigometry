@@ -1,0 +1,37 @@
+[package]
+name = "rigometry"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+description = "Local Windows hardware monitoring and storage inspection"
+license = "MIT"
+readme = "README.md"
+repository = "https://github.com/marlonka/Rigometry"
+keywords = ["windows", "hardware", "monitoring", "storage", "egui"]
+categories = ["gui", "hardware-support", "filesystem"]
+publish = false
+
+[dependencies]
+eframe = { version = "=0.34.3", default-features = false, features = ["glow", "default_fonts", "accesskit", "persistence"] }
+egui_extras = "=0.34.3"
+serde = { version = "=1.0.228", features = ["derive"] }
+serde_json = "=1.0.150"
+crossbeam-channel = "=0.5.15"
+sysinfo = "=0.37.2"
+raw-cpuid = "=11.6.0"
+libloading = "=0.8.9"
+csv = "=1.4.0"
+rfd = "=0.15.4"
+image = { version = "=0.25.10", default-features = false, features = ["png"] }
+tempfile = "=3.23.0"
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "=0.61.3", features = ["Wdk_Graphics_Direct3D", "Wdk_System_SystemInformation", "Win32_System_WindowsProgramming", "Win32_Graphics_Gdi", "Win32_Foundation", "Win32_Globalization", "Win32_Graphics_Dxgi", "Win32_Graphics_Dxgi_Common", "Win32_Storage_FileSystem", "Win32_System_IO", "Win32_System_Ioctl", "Win32_System_SystemInformation", "Win32_System_Threading", "Win32_System_Registry", "Win32_System_Performance", "Win32_System_Power", "Win32_System_Com", "Win32_System_Wmi", "Win32_System_Variant", "Win32_System_Ole", "Win32_Security"] }
+
+[dev-dependencies]
+egui_kittest = { version = "=0.34.3", default-features = false, features = ["eframe"] }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true

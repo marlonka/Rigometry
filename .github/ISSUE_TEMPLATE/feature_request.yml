@@ -1,0 +1,21 @@
+name: Feature request
+description: Propose a concrete use case or improvement.
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or task
+      description: What are you trying to inspect or accomplish?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Describe the action, data or result you need.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives or relevant hardware

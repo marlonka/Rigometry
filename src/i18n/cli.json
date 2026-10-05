@@ -1,0 +1,362 @@
+[
+  [
+    "Open the app and scan a folder",
+    "App öffnen und einen Ordner analysieren",
+    "Ouvrir l’application et analyser un dossier",
+    "Abrir la aplicación y analizar una carpeta"
+  ],
+  [
+    "Export a scan (.csv, otherwise JSON)",
+    "Analyse exportieren (.csv, sonst JSON)",
+    "Exporter une analyse (.csv, sinon JSON)",
+    "Exportar un análisis (.csv, en otro caso JSON)"
+  ],
+  [
+    "Export hardware inventory and readings",
+    "Hardware und Messwerte exportieren",
+    "Exporter le matériel et les mesures",
+    "Exportar hardware y mediciones"
+  ],
+  [
+    "Save five views after two minutes, then close",
+    "Nach zwei Minuten fünf Ansichten speichern und beenden",
+    "Enregistrer cinq vues après deux minutes, puis fermer",
+    "Guardar cinco vistas tras dos minutos y cerrar"
+  ],
+  [
+    "Select the interface and command-line language",
+    "Sprache für Oberfläche und Befehlszeile wählen",
+    "Choisir la langue de l’interface et de la ligne de commande",
+    "Elegir el idioma de la interfaz y de la línea de comandos"
+  ],
+  [
+    "Select the display theme",
+    "Farbschema wählen",
+    "Choisir le thème",
+    "Elegir el tema"
+  ],
+  [
+    "Set interface scale (0.85-1.5)",
+    "Oberflächengröße einstellen (0.85–1.5)",
+    "Définir l’échelle de l’interface (0.85–1.5)",
+    "Definir la escala de la interfaz (0.85–1.5)"
+  ],
+  [
+    "Set window dimensions",
+    "Fenstergröße einstellen",
+    "Définir les dimensions de la fenêtre",
+    "Definir las dimensiones de la ventana"
+  ],
+  [
+    "Print the application version",
+    "App-Version anzeigen",
+    "Afficher la version de l’application",
+    "Mostrar la versión de la aplicación"
+  ],
+  [
+    "Output files must not already exist; parent directories must exist.",
+    "Ausgabedateien dürfen noch nicht existieren; übergeordnete Ordner müssen vorhanden sein.",
+    "Les fichiers de sortie ne doivent pas déjà exister ; leurs dossiers parents doivent exister.",
+    "Los archivos de salida no deben existir; las carpetas superiores deben existir."
+  ],
+  [
+    "Duplicate option: {0}",
+    "Option doppelt angegeben: {0}",
+    "Option en double : {0}",
+    "Opción duplicada: {0}"
+  ],
+  [
+    "{0} requires a value",
+    "{0} benötigt einen Wert",
+    "{0} nécessite une valeur",
+    "{0} requiere un valor"
+  ],
+  [
+    "--language requires system, en, de, fr or es",
+    "--language benötigt system, en, de, fr oder es",
+    "--language nécessite system, en, de, fr ou es",
+    "--language requiere system, en, de, fr o es"
+  ],
+  [
+    "--window-size requires positive finite WIDTHxHEIGHT",
+    "--window-size benötigt BREITExHÖHE mit endlichen positiven Zahlen",
+    "--window-size nécessite LARGEURxHAUTEUR avec des nombres finis positifs",
+    "--window-size requiere ANCHOxALTO con números finitos positivos"
+  ],
+  [
+    "--scale requires a positive finite number",
+    "--scale benötigt eine endliche positive Zahl",
+    "--scale nécessite un nombre fini positif",
+    "--scale requiere un número finito positivo"
+  ],
+  [
+    "--theme requires Dark, Light or System",
+    "--theme benötigt Dark, Light oder System",
+    "--theme nécessite Dark, Light ou System",
+    "--theme requiere Dark, Light o System"
+  ],
+  [
+    "Unknown or incompatible option: {0}; use --help",
+    "Unbekannte oder inkompatible Option: {0}; siehe --help",
+    "Option inconnue ou incompatible : {0} ; utilisez --help",
+    "Opción desconocida o incompatible: {0}; usa --help"
+  ],
+  [
+    "--help and --version only accept --language",
+    "--help und --version sind jeweils nur mit --language kombinierbar",
+    "--help et --version acceptent uniquement --language",
+    "--help y --version solo aceptan --language"
+  ],
+  [
+    "Display options cannot be combined with --headless",
+    "Anzeigeoptionen sind nicht mit --headless kombinierbar",
+    "Les options d’affichage ne peuvent pas être combinées à --headless",
+    "Las opciones de visualización no se pueden combinar con --headless"
+  ],
+  [
+    "--headless requires --report or --scan with --export",
+    "--headless benötigt --report oder --scan mit --export",
+    "--headless nécessite --report ou --scan avec --export",
+    "--headless requiere --report o --scan con --export"
+  ],
+  [
+    "Headless scans require both --scan and --export",
+    "Analysen ohne Oberfläche benötigen --scan und --export",
+    "Les analyses sans interface nécessitent --scan et --export",
+    "Los análisis sin interfaz requieren --scan y --export"
+  ],
+  [
+    "--report and --export require --headless",
+    "--report und --export benötigen --headless",
+    "--report et --export nécessitent --headless",
+    "--report y --export requieren --headless"
+  ],
+  [
+    "Command-line arguments must be valid Unicode",
+    "Befehlszeilenargumente müssen gültiges Unicode sein",
+    "Les arguments doivent être en Unicode valide",
+    "Los argumentos deben ser Unicode válido"
+  ],
+  [
+    "Screenshot capture failed or was interrupted; existing files are never overwritten",
+    "Screenshot-Aufnahme fehlgeschlagen oder unterbrochen; vorhandene Dateien werden niemals überschrieben",
+    "Capture échouée ou interrompue ; les fichiers existants ne sont jamais écrasés",
+    "La captura falló o se interrumpió; los archivos existentes nunca se sobrescriben"
+  ],
+  [
+    "--scan requires --export in headless mode",
+    "--scan benötigt --export im Modus ohne Oberfläche",
+    "--scan nécessite --export en mode sans interface",
+    "--scan requiere --export en modo sin interfaz"
+  ],
+  [
+    "Provider returned a non-finite value",
+    "Quelle lieferte keinen endlichen Wert",
+    "La source a renvoyé une valeur non finie",
+    "La fuente devolvió un valor no finito"
+  ],
+  [
+    "CPUID leaf 0",
+    "CPUID-Blatt 0",
+    "Feuille CPUID 0",
+    "Hoja CPUID 0"
+  ],
+  [
+    "CPUID leaf 1",
+    "CPUID-Blatt 1",
+    "Feuille CPUID 1",
+    "Hoja CPUID 1"
+  ],
+  [
+    "CPUID leaf 16h",
+    "CPUID-Blatt 16h",
+    "Feuille CPUID 16h",
+    "Hoja CPUID 16h"
+  ],
+  [
+    "Software adapter",
+    "Software-Grafikkarte",
+    "Carte logicielle",
+    "Tarjeta por software"
+  ],
+  [
+    "Screenshot export: {0}",
+    "Screenshot-Export: {0}",
+    "Export des captures : {0}",
+    "Exportación de capturas: {0}"
+  ],
+  [
+    "NVML PCI identity",
+    "NVML-PCI-Kennung",
+    "Identité PCI NVML",
+    "Identidad PCI NVML"
+  ],
+  [
+    "NVML nvmlDeviceGetMemoryInfo.total; physical device memory, distinct from DXGI graphics capacity",
+    "NVML nvmlDeviceGetMemoryInfo.total; physischer Gerätespeicher, nicht DXGI-Grafikspeicherkapazität",
+    "NVML nvmlDeviceGetMemoryInfo.total ; mémoire physique du périphérique, distincte de la capacité graphique DXGI",
+    "NVML nvmlDeviceGetMemoryInfo.total; memoria física del dispositivo, distinta de la capacidad gráfica DXGI"
+  ],
+  [
+    "NVML / NVIDIA driver",
+    "NVML / NVIDIA-Treiber",
+    "NVML / pilote NVIDIA",
+    "NVML / controlador NVIDIA"
+  ],
+  [
+    "NVML / NVIDIA display driver",
+    "NVML / NVIDIA-Grafiktreiber",
+    "NVML / pilote graphique NVIDIA",
+    "NVML / controlador gráfico NVIDIA"
+  ],
+  [
+    "D3DKMT_ADAPTERADDRESS; PCI domain not exposed",
+    "D3DKMT_ADAPTERADDRESS; PCI-Domäne nicht verfügbar",
+    "D3DKMT_ADAPTERADDRESS ; domaine PCI non fourni",
+    "D3DKMT_ADAPTERADDRESS; dominio PCI no disponible"
+  ],
+  [
+    "NtQuerySystemInformation / processor time deltas",
+    "NtQuerySystemInformation / Prozessorzeitdifferenzen",
+    "NtQuerySystemInformation / écarts de temps processeur",
+    "NtQuerySystemInformation / diferencias de tiempo del procesador"
+  ],
+  [
+    "D3DKMT_GPUVERSION / display driver",
+    "D3DKMT_GPUVERSION / Grafiktreiber",
+    "D3DKMT_GPUVERSION / pilote graphique",
+    "D3DKMT_GPUVERSION / controlador gráfico"
+  ],
+  [
+    "Windows / vendor PCIe provider",
+    "Windows / Hersteller-PCIe-Quelle",
+    "Windows / source PCIe du fabricant",
+    "Windows / fuente PCIe del fabricante"
+  ],
+  [
+    "DXGI vendor ID",
+    "DXGI-Herstellerkennung",
+    "Identifiant fabricant DXGI",
+    "ID de fabricante DXGI"
+  ],
+  [
+    "DXGI flags",
+    "DXGI-Flags",
+    "Indicateurs DXGI",
+    "Indicadores DXGI"
+  ],
+  [
+    "D3DKMT_ADAPTER_PERFDATA / WDDM driver",
+    "D3DKMT_ADAPTER_PERFDATA / WDDM-Treiber",
+    "D3DKMT_ADAPTER_PERFDATA / pilote WDDM",
+    "D3DKMT_ADAPTER_PERFDATA / controlador WDDM"
+  ],
+  [
+    "Path is empty or contains a NUL character",
+    "Pfad ist leer oder enthält ein NUL-Zeichen",
+    "Le chemin est vide ou contient un caractère NUL",
+    "La ruta está vacía o contiene un carácter NUL"
+  ],
+  [
+    "Device and NT namespace paths are not supported",
+    "Geräte- und NT-Namensraumpfade werden nicht unterstützt",
+    "Chemins de périphériques et d’espace de noms NT non pris en charge",
+    "No se admiten rutas de dispositivos ni del espacio de nombres NT"
+  ],
+  [
+    "Reparse/cloud entry excluded",
+    "Analysepunkt-/Cloudeintrag ausgeschlossen",
+    "Entrée cloud/point d’analyse exclue",
+    "Entrada de nube/punto de reanálisis excluida"
+  ],
+  [
+    "volume read handle: {0}",
+    "Volume-Lesehandle: {0}",
+    "Handle de lecture du volume : {0}",
+    "Identificador de lectura del volumen: {0}"
+  ],
+  [
+    "invalid MFT response length",
+    "ungültige MFT-Antwortlänge",
+    "longueur de réponse MFT invalide",
+    "longitud de respuesta MFT no válida"
+  ],
+  [
+    "MFT cursor did not advance",
+    "MFT-Cursor wurde nicht weiterbewegt",
+    "le curseur MFT n’a pas avancé",
+    "el cursor MFT no avanzó"
+  ],
+  [
+    "MFT index exceeded its 128 MiB memory budget",
+    "MFT-Index überschritt sein Speicherbudget von 128 MiB",
+    "l’index MFT a dépassé son budget mémoire de 128 MiB",
+    "el índice MFT superó su presupuesto de memoria de 128 MiB"
+  ],
+  [
+    "truncated USN record",
+    "abgeschnittener USN-Datensatz",
+    "enregistrement USN tronqué",
+    "registro USN truncado"
+  ],
+  [
+    "USN record version {0} is unsupported",
+    "USN-Datensatzversion {0} wird nicht unterstützt",
+    "version {0} des enregistrements USN non prise en charge",
+    "versión {0} de registros USN no compatible"
+  ],
+  [
+    "invalid USN record length",
+    "ungültige USN-Datensatzlänge",
+    "longueur d’enregistrement USN invalide",
+    "longitud de registro USN no válida"
+  ],
+  [
+    "invalid USN name bounds",
+    "ungültige USN-Namensgrenzen",
+    "limites de nom USN invalides",
+    "límites de nombre USN no válidos"
+  ],
+  [
+    "invalid USN path component",
+    "ungültiger USN-Pfadbestandteil",
+    "composant de chemin USN invalide",
+    "componente de ruta USN no válido"
+  ],
+  [
+    "unterminated hard-link name",
+    "Hardlink-Name ohne Abschluss",
+    "nom de lien physique non terminé",
+    "nombre de enlace físico sin terminar"
+  ],
+  [
+    "hard-link name is not volume-relative",
+    "Hardlink-Name ist nicht relativ zum Volume",
+    "nom de lien physique non relatif au volume",
+    "el nombre de enlace físico no es relativo al volumen"
+  ],
+  [
+    "invalid hard-link path",
+    "ungültiger Hardlink-Pfad",
+    "chemin de lien physique invalide",
+    "ruta de enlace físico no válida"
+  ],
+  [
+    "Hard-link name enumeration exceeded its count or memory budget; additional paths are unavailable",
+    "Erfassung der Hardlink-Namen überschritt Anzahl- oder Speicherbudget; weitere Pfade nicht verfügbar",
+    "L’énumération des liens physiques a dépassé son quota ou budget mémoire ; chemins supplémentaires indisponibles",
+    "La enumeración de enlaces físicos superó su límite de cantidad o memoria; rutas adicionales no disponibles"
+  ],
+  [
+    "{0}\n{1} · {2}\n{3} ms since Unix epoch\nLast value: {4}",
+    "{0}\n{1} · {2}\n{3} ms seit Unix-Epoche\nLetzter Wert: {4}",
+    "{0}\n{1} · {2}\n{3} ms depuis l’époque Unix\nDernière valeur : {4}",
+    "{0}\n{1} · {2}\n{3} ms desde la época Unix\nÚltimo valor: {4}"
+  ],
+  [
+    "{0} · {1}\n{2}\nLast value: {3}",
+    "{0} · {1}\n{2}\nLetzter Wert: {3}",
+    "{0} · {1}\n{2}\nDernière valeur : {3}",
+    "{0} · {1}\n{2}\nÚltimo valor: {3}"
+  ]
+]
