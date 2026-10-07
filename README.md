@@ -6,7 +6,9 @@
 
 Hardware monitoring and storage analysis for **Windows 11 on Intel and AMD x64 PCs**.
 
-[Download](https://github.com/marlonka/Rigometry/releases) · [User guide](docs/usage.md) · [Build from source](docs/development.md) · [Contribute](CONTRIBUTING.md)
+Rigometry is a personal hobby project (Privatprojekt) by Marlon Kaulich, available free of charge with no paid support.
+
+[Download](https://github.com/marlonka/Rigometry/releases) · [User guide](docs/usage.md) · [Build from source](docs/development.md) · [Contribute](CONTRIBUTING.md) · [Impressum](https://marlonkaulich.de/impressum.html)
 
 ![Hardware overview in the dark theme](docs/screenshots/overview.png)
 
@@ -68,3 +70,5 @@ cargo build --release --locked
 [Development](docs/development.md) · [Architecture](docs/architecture.md) · [Release process](docs/releasing.md) · [Report a bug](https://github.com/marlonka/Rigometry/issues/new/choose) · [Security reporting](SECURITY.md)
 
 Application source and original artwork: [MIT](LICENSE). Dependencies, fonts and runtime components retain their own licenses; see [third-party notices](docs/dependency-notices.md). Developed with AI assistance.
+
+The MIT license also permits commercial use. Provider information for Rigometry: [Impressum](https://marlonkaulich.de/impressum.html).
