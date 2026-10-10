@@ -33,6 +33,17 @@ The release verification script builds the app, writes a native hardware report 
 
 CI runs formatting, Clippy, tests, release verification, package verification and a RustSec advisory check. Tagged builds additionally prepare a draft GitHub Release. Native hardware accuracy, Narrator and mixed-DPI behavior require manual verification.
 
+Two compatibility jobs rerun the release verification on the built executable:
+
+- **CPU emulation:** under [Intel SDE](https://www.intel.com/content/www/us/en/download/684897/intel-software-development-emulator.html) as Nehalem, Alder Lake, Arrow Lake and Sapphire Rapids. SDE stops on any instruction the emulated chip lacks, so the Nehalem run fails if AVX code reaches the executable. Detected vendor, family/model and instruction sets must match the chip. SDE emulates the instruction set and CPUID identity only: it does not emulate cache leaf 4, and Windows topology, efficiency classes, WMI and SMBIOS still describe the runner. This is not a physical Intel test.
+- **Windows on Arm:** the x64 executable under x64 emulation on a `windows-11-arm` runner. Headless only; the runner has no GPU.
+
+To reproduce an emulated run locally, pass the emulator as a command prefix:
+
+```powershell
+pwsh -File .\scripts\verify-windows.ps1 -SkipBuild -SkipTests -TimeoutSeconds 900 -Launcher C:\path\to\sde.exe, '-nhm', '--'
+```
+
 ## Visual checks
 
 ```powershell

@@ -127,6 +127,7 @@ try {
         launcher = $Launcher
         cpu_vendor = @($hardware.inventory.cpu | Where-Object label -eq 'Vendor' | ForEach-Object value) | Select-Object -First 1
         cpu_model = @($hardware.inventory.cpu | Where-Object label -eq 'Model' | ForEach-Object value) | Select-Object -First 1
+        cpu_signature = @($hardware.inventory.cpu | Where-Object label -eq 'Family / model / stepping' | ForEach-Object value) | Select-Object -First 1
         cpu_instruction_sets = @(@($hardware.inventory.cpu | Where-Object label -eq 'Instruction sets (hardware)' | ForEach-Object value) | Select-Object -First 1) -split ' · ' | Where-Object { $_ }
         cpu_caches = @($hardware.inventory.cpu | Where-Object label -match '^L\d ' | ForEach-Object label)
         cpu_state = $hardware.sample.cpu_usage.state

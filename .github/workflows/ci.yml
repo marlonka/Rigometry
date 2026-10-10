@@ -68,8 +68,9 @@ jobs:
           retention-days: 14
 
   cpu-emulation:
-    # Intel SDE emulates each CPU's instruction set and CPUID, and stops on any instruction
-    # the chip lacks. Windows APIs, WMI and SMBIOS still describe the runner itself.
+    # Intel SDE emulates each CPU's instruction set and CPUID identity, and stops on any
+    # instruction the chip lacks. It does not emulate cache leaf 4, and Windows APIs, WMI and
+    # SMBIOS still describe the runner itself.
     name: CPU emulation (${{ matrix.chip }})
     needs: windows
     runs-on: windows-2025
@@ -79,15 +80,19 @@ jobs:
       matrix:
         include:
           - chip: nhm # Nehalem: the oldest instruction set Windows 11 24H2 runs on, no AVX
+            signature: 6 / 26 /
             require: SSE4.2
             forbid: AVX AVX2 AVX-512F
           - chip: adl # Alder Lake: hybrid P/E cores, AVX2
+            signature: 6 / 151 /
             require: AVX2
             forbid: AVX-512F
           - chip: arl # Arrow Lake: Core Ultra 200
+            signature: 6 / 197 /
             require: AVX2
             forbid: AVX-512F
           - chip: spr # Sapphire Rapids: Xeon with AVX-512
+            signature: 6 / 143 /
             require: AVX-512F
             forbid: ''
     defaults:
@@ -119,16 +124,17 @@ jobs:
         run: ./scripts/verify-windows.ps1 -SkipBuild -SkipTests -TimeoutSeconds 900 -Launcher $env:SDE_EXE, '-${{ matrix.chip }}', '--'
       - name: Check detection against the emulated chip
         env:
+          SIGNATURE: ${{ matrix.signature }}
           REQUIRE: ${{ matrix.require }}
           FORBID: ${{ matrix.forbid }}
         run: |
           $summary = Get-ChildItem artifacts/verification -Recurse -Filter verification.json | Get-Content -Raw | ConvertFrom-Json
-          $summary | Select-Object cpu_vendor, cpu_model, cpu_instruction_sets, cpu_caches | Format-List
+          $summary | Select-Object cpu_vendor, cpu_model, cpu_signature, cpu_instruction_sets | Format-List
           $sets = @($summary.cpu_instruction_sets)
           if ($summary.cpu_vendor -cne 'GenuineIntel') { throw "Expected GenuineIntel, got '$($summary.cpu_vendor)'." }
+          if (-not "$($summary.cpu_signature)".StartsWith($env:SIGNATURE)) { throw "Expected family / model $env:SIGNATURE, got '$($summary.cpu_signature)'." }
           foreach ($name in $env:REQUIRE -split ' ' | Where-Object { $_ }) { if ($sets -notcontains $name) { throw "$name not detected." } }
           foreach ($name in $env:FORBID -split ' ' | Where-Object { $_ }) { if ($sets -contains $name) { throw "$name detected but the chip lacks it." } }
-          foreach ($level in 'L1', 'L2', 'L3') { if (-not ($summary.cpu_caches -match "^$level ")) { throw "$level cache missing from CPUID leaf 4." } }
       - name: Keep emulated reports
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -165,7 +171,7 @@ jobs:
         run: |
           ./scripts/verify-windows.ps1 -SkipBuild -SkipTests
           Get-ChildItem artifacts/verification -Recurse -Filter verification.json | Get-Content -Raw | ConvertFrom-Json |
-            Select-Object cpu_vendor, cpu_model, cpu_instruction_sets, cpu_caches, cpu_state | Format-List
+            Select-Object cpu_vendor, cpu_model, cpu_signature, cpu_instruction_sets, cpu_caches, cpu_state | Format-List
       - name: Keep emulated report
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
