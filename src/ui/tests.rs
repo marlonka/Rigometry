@@ -24,6 +24,20 @@ fn explorer_reveal_cannot_search_for_an_executable_in_an_untrusted_directory() {
     assert!(explorer_command(Path::new("C:\\data\\bad\" /root,C:\\")).is_err());
 }
 
+#[test]
+fn administrator_scan_passes_the_path_as_one_argument() {
+    // CommandLineToArgvW reads `\"` as a literal quote, so a drive root's
+    // trailing backslash must be doubled to close the argument.
+    for (path, argument) in [
+        ("C:\\", "--scan \"C:\\\\\""),
+        ("D:\\Spiele & Filme", "--scan \"D:\\Spiele & Filme\""),
+        ("\\\\server\\share\\", "--scan \"\\\\server\\share\\\\\""),
+    ] {
+        assert_eq!(scan_argument(Path::new(path)).unwrap(), argument);
+    }
+    assert!(scan_argument(Path::new("C:\\a\" --headless")).is_err());
+}
+
 fn app_harness() -> Harness<'static, App> {
     let mut harness = Harness::builder()
         .with_size([1280.0, 920.0])
@@ -235,6 +249,18 @@ fn storage_scan_drill_down_largest_files_and_filter_use_real_results() {
         .find(|n| n.name == "Projects_日本語")
         .unwrap()
         .id;
+    // The root crumb names the folder, not its whole path (user name, etc.).
+    let root_name = fixture.path().file_name().unwrap().to_string_lossy();
+    assert!(
+        harness
+            .query_by_role_and_label(Role::Button, &root_name)
+            .is_some()
+    );
+    assert!(
+        harness
+            .query_by_role_and_label(Role::Button, &fixture.path().to_string_lossy())
+            .is_none()
+    );
     assert!(
         harness
             .query_by_role_and_label(Role::Button, "CSV")
@@ -245,6 +271,16 @@ fn storage_scan_drill_down_largest_files_and_filter_use_real_results() {
             .query_by_role_and_label(Role::Button, "JSON")
             .is_some()
     );
+    // Every row offers Explorer directly; the actions below the table can be
+    // scrolled out of view.
+    for name in ["Projects_日本語", "small.txt", "Empty"] {
+        assert!(
+            harness
+                .query_by_role_and_label(Role::Button, &format!("Reveal in Explorer {name}"))
+                .is_some(),
+            "{name} has no reveal button"
+        );
+    }
 
     // Model a discovered directory whose enumeration did not finish. The table
     // must not turn its known zero lower bound into a claim that it is empty.
@@ -416,15 +452,87 @@ fn storage_scan_drill_down_largest_files_and_filter_use_real_results() {
     assert_eq!(state.visible.len(), 2);
     assert_eq!(state.nodes[state.visible[0].0].name, "report.bin");
     assert!(state.visible.iter().all(|(id, _)| !state.nodes[*id].is_dir));
+    // Every row would read 1, so the list of files has no file-count column.
+    assert!(
+        harness
+            .query_by_role_and_label(Role::Button, "Files")
+            .is_none()
+    );
 
-    click(&harness, Role::TextInput, "Filter");
+    click(&harness, Role::TextInput, "Search");
     harness
-        .get_by_role_and_label(Role::TextInput, "Filter")
+        .get_by_role_and_label(Role::TextInput, "Search")
         .type_text("small.txt");
     harness.run_steps(2);
     assert_eq!(harness.state().state.visible.len(), 1);
     let id = harness.state().state.visible[0].0;
     assert_eq!(harness.state().state.nodes[id].name, "small.txt");
+    assert_eq!(harness.state().state.sort, Sort::Relevance);
+
+    // Typos and folder words reach entries through the real search field.
+    let search = |harness: &mut Harness<'_, App>, text: &str| {
+        harness.key_press_modifiers(Modifiers::COMMAND, Key::A);
+        harness.key_press(Key::Backspace);
+        if !text.is_empty() {
+            harness
+                .get_by_role_and_label(Role::TextInput, "Search")
+                .type_text(text);
+        }
+        harness.run_steps(2);
+        let state = &harness.state().state;
+        state
+            .visible
+            .iter()
+            .map(|(id, _)| state.nodes[*id].name.clone())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(search(&mut harness, "smll.txt"), ["small.txt"]);
+    click(&harness, Role::Button, "Hierarchy");
+    harness.run_steps(2);
+    click(&harness, Role::TextInput, "Search");
+    assert_eq!(search(&mut harness, "projects report"), ["report.bin"]);
+    assert_eq!(
+        search(&mut harness, "kind:dir"),
+        ["Empty", "Projects_日本語"]
+    );
+    assert!(
+        harness
+            .query_by_role_and_label(Role::Label, "No matches below this folder")
+            .is_none()
+    );
+    assert!(search(&mut harness, "nothing-like-this").is_empty());
+    assert!(
+        harness
+            .query_by_role_and_label(Role::Label, "No matches below this folder")
+            .is_some()
+    );
+    assert!(search(&mut harness, "size:>huge").is_empty());
+    assert!(
+        harness
+            .query_by_role_and_label(Role::Label, "Invalid search filter: size:>huge")
+            .is_some()
+    );
+
+    // Clearing the search restores the hierarchy and the earlier sort.
+    search(&mut harness, "");
+    let state = &harness.state().state;
+    assert_eq!(state.sort, Sort::Allocated);
+    assert!(state.search_error.is_none());
+    // The folder opened earlier stays expanded in the restored hierarchy.
+    let rows: Vec<_> = state
+        .visible
+        .iter()
+        .map(|(id, depth)| (state.nodes[*id].name.as_str(), *depth))
+        .collect();
+    assert_eq!(
+        rows,
+        [
+            ("Projects_日本語", 0),
+            ("report.bin", 1),
+            ("small.txt", 0),
+            ("Empty", 0)
+        ]
+    );
 }
 
 #[test]
@@ -545,7 +653,10 @@ fn cancelling_and_restarting_keeps_queued_old_results_out_of_new_scan() {
     assert!(!state.summary.as_ref().unwrap().cancelled);
     assert_eq!(state.nodes.len(), 2);
     assert_eq!(state.nodes[0].logical, 17);
-    assert!(state.nodes.iter().all(|n| n.path.starts_with(new.path())));
+    assert!(
+        (0..state.nodes.len())
+            .all(|id| crate::storage::node_path(&state.nodes, id).starts_with(new.path()))
+    );
     assert!(state.nodes.iter().any(|n| n.name == "new-only.txt"));
     assert!(!state.nodes.iter().any(|n| n.name.starts_with("old-")));
 }

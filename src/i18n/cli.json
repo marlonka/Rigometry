@@ -276,76 +276,10 @@
     "Identificador de lectura del volumen: {0}"
   ],
   [
-    "invalid MFT response length",
-    "ungültige MFT-Antwortlänge",
-    "longueur de réponse MFT invalide",
-    "longitud de respuesta MFT no válida"
-  ],
-  [
-    "MFT cursor did not advance",
-    "MFT-Cursor wurde nicht weiterbewegt",
-    "le curseur MFT n’a pas avancé",
-    "el cursor MFT no avanzó"
-  ],
-  [
-    "MFT index exceeded its 128 MiB memory budget",
-    "MFT-Index überschritt sein Speicherbudget von 128 MiB",
-    "l’index MFT a dépassé son budget mémoire de 128 MiB",
-    "el índice MFT superó su presupuesto de memoria de 128 MiB"
-  ],
-  [
-    "truncated USN record",
-    "abgeschnittener USN-Datensatz",
-    "enregistrement USN tronqué",
-    "registro USN truncado"
-  ],
-  [
-    "USN record version {0} is unsupported",
-    "USN-Datensatzversion {0} wird nicht unterstützt",
-    "version {0} des enregistrements USN non prise en charge",
-    "versión {0} de registros USN no compatible"
-  ],
-  [
-    "invalid USN record length",
-    "ungültige USN-Datensatzlänge",
-    "longueur d’enregistrement USN invalide",
-    "longitud de registro USN no válida"
-  ],
-  [
-    "invalid USN name bounds",
-    "ungültige USN-Namensgrenzen",
-    "limites de nom USN invalides",
-    "límites de nombre USN no válidos"
-  ],
-  [
-    "invalid USN path component",
-    "ungültiger USN-Pfadbestandteil",
-    "composant de chemin USN invalide",
-    "componente de ruta USN no válido"
-  ],
-  [
-    "unterminated hard-link name",
-    "Hardlink-Name ohne Abschluss",
-    "nom de lien physique non terminé",
-    "nombre de enlace físico sin terminar"
-  ],
-  [
-    "hard-link name is not volume-relative",
-    "Hardlink-Name ist nicht relativ zum Volume",
-    "nom de lien physique non relatif au volume",
-    "el nombre de enlace físico no es relativo al volumen"
-  ],
-  [
-    "invalid hard-link path",
-    "ungültiger Hardlink-Pfad",
-    "chemin de lien physique invalide",
-    "ruta de enlace físico no válida"
-  ],
-  [
-    "Hard-link name enumeration exceeded its count or memory budget; additional paths are unavailable",
-    "Erfassung der Hardlink-Namen überschritt Anzahl- oder Speicherbudget; weitere Pfade nicht verfügbar",
-    "L’énumération des liens physiques a dépassé son quota ou budget mémoire ; chemins supplémentaires indisponibles",
-    "La enumeración de enlaces físicos superó su límite de cantidad o memoria; rutas adicionales no disponibles"
+    "MFT index exceeded its 512 MiB memory budget",
+    "MFT-Index überschritt sein Speicherbudget von 512 MiB",
+    "l’index MFT a dépassé son budget mémoire de 512 MiB",
+    "el índice MFT superó su presupuesto de memoria de 512 MiB"
   ],
   [
     "{0}\n{1} · {2}\n{3} ms since Unix epoch\nLast value: {4}",

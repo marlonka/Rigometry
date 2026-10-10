@@ -56,8 +56,8 @@ Do not silence advisories to make CI pass. The optional `scripts/audit-dependenc
 
 Regenerate the application icon with `pwsh -File .\scripts\generate-icon.ps1`; inspect small sizes and keep the sidebar geometry synchronized. See [artwork](../assets/README.md).
 
-To refresh screenshots, run `rigometry.exe --capture DIRECTORY --theme Dark --scale 1 --window-size 1440x940`. Capture mode collects two minutes of live readings, saves five views and closes. It ignores in-app pointer and keyboard input, suppresses hover tooltips, and uses temporary settings. Use `--scan PATH` with a controlled fixture for storage screenshots; existing output files are never overwritten.
+To refresh screenshots, run `rigometry.exe --language en --capture DIRECTORY --theme Dark --scale 1 --window-size 1440x940 --scan .\src`. Capture mode collects two minutes of live readings, saves five views and closes. It ignores in-app pointer and keyboard input, suppresses hover tooltips, and uses temporary settings. Use `--scan PATH` with a controlled fixture for storage screenshots; existing output files are never overwritten.
 
-`pwsh -File .\scripts\benchmark.ps1` measures startup, idle resource use and a controlled 10,000-file scan. State the build, hardware, dataset and cache conditions when sharing measurements.
+`pwsh -File .\scripts\benchmark.ps1` measures startup, idle resource use and a controlled 10,000-file scan. Whole-drive scan and search measurements, with their commands, are in [benchmarks](benchmarks.md); the search benchmark is an ignored test that reads a scan export. State the build, hardware, dataset and cache conditions when sharing measurements.
 
 Keep local reports, downloaded tools, packages, credentials and signing material out of Git. `Cargo.lock`, source artwork and deliberately selected screenshots belong in source control.

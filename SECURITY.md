@@ -10,7 +10,9 @@ Include the version, Windows version, impact and reproduction using disposable f
 
 ## Security boundaries
 
-- Hardware queries and scans do not elevate privileges, install drivers, delete files or change hardware settings.
+- Hardware queries and scans do not install drivers, delete files or change hardware settings. They never elevate on their own: **Scan as administrator** restarts the app with administrator rights only when the user chooses it and confirms the Windows prompt.
+- With administrator rights, whole-drive scans read the NTFS volume directly, read-only. The master file table is parsed as untrusted input: every offset and length is bounds-checked, inconsistent records are read again or reported, and anything unexpected falls back to standard enumeration.
+- Standard scans parse folder listings returned by Windows, including from network drives, with the same bounds checks. The `.` and `..` entries are skipped, names containing path separators or stream syntax are rejected, and each folder is checked on its own handle before listing, so a folder replaced by a junction is not followed.
 - Reports, exports and captures require new output file names. Existing destinations are refused.
 - Reparse points and cloud placeholders are excluded; a denied query remains unavailable or uses a read-only fallback.
 - Installed graphics drivers and Windows APIs are trusted native code. The app does not sandbox a faulty or hostile driver or filesystem.

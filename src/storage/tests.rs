@@ -54,6 +54,16 @@ fn scan_preserves_unicode_empty_directories_and_unique_hardlink_allocation() {
     let aliases: Vec<_> = nodes.iter().filter(|n| n.logical == 16_384).collect();
     assert_eq!(aliases.iter().filter(|n| n.allocated == 0).count(), 1);
     assert!(aliases.iter().any(|n| n.note.contains("Hard-link alias")));
+    // Nodes keep names only; their full paths are rebuilt from the root.
+    assert_eq!(super::node_path(&nodes, 0), fixture.path());
+    for node in &nodes[1..] {
+        let path = super::node_path(&nodes, node.id);
+        assert_eq!(path.is_dir(), node.is_dir, "{path:?}");
+        assert_eq!(
+            path.file_name().unwrap().to_string_lossy(),
+            node.name.as_str()
+        );
+    }
 }
 
 #[test]
@@ -79,7 +89,7 @@ fn hardlink_count_changes_never_double_count_physical_bytes() {
             retained_bytes: 0,
             stopped: false,
         };
-        worker.visit(original.clone(), None).unwrap();
+        worker.visit(&original, None).unwrap();
         let allocated = worker.batch[0].allocated;
         assert!(allocated > 0, "fixture must own physical clusters");
         if add_link_after_first_visit {
@@ -87,7 +97,7 @@ fn hardlink_count_changes_never_double_count_physical_bytes() {
         } else {
             fs::remove_file(&original).unwrap();
         }
-        worker.visit(alias.clone(), None).unwrap();
+        worker.visit(&alias, None).unwrap();
         assert_eq!(worker.summary.errors, 0);
         assert_eq!(worker.batch[1].logical, 16_384);
         assert_eq!(
@@ -143,7 +153,6 @@ fn cancellation_cannot_block_on_full_progress_queue() {
             worker.batch.push(ScanNode {
                 id: index,
                 parent: None,
-                path: PathBuf::new(),
                 name: String::new(),
                 is_dir: false,
                 logical: 1,
@@ -216,7 +225,10 @@ fn exports_preserve_values_and_partial_state() {
     assert_eq!(&records[1][8], "cancelled_partial");
     assert_eq!(&records[1][9], "true");
     assert!(records[1][7].starts_with("'="));
-    assert_eq!(&records[1][3], nodes[1].path.to_string_lossy().as_ref());
+    assert_eq!(
+        &records[1][3],
+        super::node_path(&nodes, 1).to_string_lossy().as_ref()
+    );
     for formula in [
         "=1+1",
         " +SUM(1,2)",
@@ -290,7 +302,7 @@ fn metadata_budget_finishes_as_partial_without_cancel_or_retaining_more_nodes() 
         retained_bytes: MAX_RETAINED_BYTES,
         stopped: false,
     };
-    assert!(worker.visit(file.clone(), None).is_none());
+    assert!(worker.visit(&file, None).is_none());
     assert!(worker.batch.is_empty());
     finish_scan(worker, Instant::now());
     let ScanEvent::Finished(summary) = receiver.recv_timeout(Duration::from_secs(1)).unwrap()
@@ -334,13 +346,13 @@ fn metadata_budget_finishes_as_partial_without_cancel_or_retaining_more_nodes() 
         retained_bytes: 0,
         stopped: false,
     };
-    worker.visit(file, None).unwrap();
+    worker.visit(&file, None).unwrap();
     let first_node_bytes = worker.retained_bytes;
     worker.batch.clear();
     worker.retained_bytes = MAX_RETAINED_BYTES - first_node_bytes;
     // Identical path/name lengths would fit before metadata is read, but the
     // extra hard-link diagnostic must also fit before publishing this node.
-    assert!(worker.visit(alias, None).is_none());
+    assert!(worker.visit(&alias, None).is_none());
     assert!(worker.batch.is_empty());
     finish_scan(worker, Instant::now());
     assert!(
@@ -387,10 +399,10 @@ mod windows_tests {
     };
 
     #[test]
-    fn file_and_directory_alternate_streams_are_counted() {
+    fn listed_files_count_their_main_stream_and_the_root_its_streams() {
         let fixture = tempfile::tempdir().unwrap();
         let file = fixture.path().join("with-streams.bin");
-        fs::write(&file, b"default").unwrap();
+        fs::write(&file, vec![1u8; 8192]).unwrap();
         let mut ads = file.as_os_str().to_os_string();
         ads.push(":metadata");
         fs::write(PathBuf::from(ads), vec![5u8; 8192]).unwrap();
@@ -400,23 +412,120 @@ mod windows_tests {
         fs::hard_link(&file, fixture.path().join("stream-alias.bin")).unwrap();
         let (nodes, summary) = collect_scan(fixture.path());
         assert_eq!(summary.errors, 0, "{:?}", summary.notes);
+        // The selected root is opened and read in full, streams included.
         assert_eq!(nodes[0].logical, 13);
-        assert_eq!(nodes[1].logical, 8199);
-        assert!(nodes[1].allocated >= 8192);
-        assert!(nodes[1].note.contains("named data stream"));
+        // Listed files report their main stream; named streams have no
+        // batch query and are left to the administrator's MFT scan.
+        let files: Vec<_> = nodes.iter().filter(|n| !n.is_dir).collect();
+        assert_eq!(files.len(), 2);
+        assert!(files.iter().all(|n| n.logical == 8192));
         assert_eq!(summary.hard_links, 1);
         assert_eq!(
-            nodes.iter().map(|node| node.logical).sum::<u64>(),
-            13 + 8199 * 2
+            files.iter().map(|n| n.allocated).collect::<Vec<_>>(),
+            [8192, 0],
+            "the first path listed owns the clusters, the alias none"
         );
+        assert!(files[1].note.contains("Hard-link alias"));
+    }
+
+    fn listing_record(name: &str, next: u32, logical: i64, attributes: u32) -> Vec<u8> {
+        let layout = listing::LAYOUTS[0];
+        let name: Vec<u8> = name.encode_utf16().flat_map(u16::to_le_bytes).collect();
+        let mut record = vec![0u8; (layout.name + name.len()).next_multiple_of(8)];
+        record[0..4].copy_from_slice(&next.to_le_bytes());
+        record[40..48].copy_from_slice(&logical.to_le_bytes());
+        record[48..56].copy_from_slice(&4096i64.to_le_bytes());
+        record[56..60].copy_from_slice(&attributes.to_le_bytes());
+        record[60..64].copy_from_slice(&(name.len() as u32).to_le_bytes());
+        record[72..80].copy_from_slice(&7u64.to_le_bytes());
+        record[layout.name..layout.name + name.len()].copy_from_slice(&name);
+        record
+    }
+
+    #[test]
+    fn listing_layouts_match_the_windows_structures() {
+        use std::mem::offset_of;
+        use windows::Win32::Storage::FileSystem::{
+            FILE_FULL_DIR_INFO, FILE_ID_BOTH_DIR_INFO, FILE_ID_EXTD_DIR_INFO,
+        };
+        let [extd, both, full] = listing::LAYOUTS;
+        assert_eq!(extd.name, offset_of!(FILE_ID_EXTD_DIR_INFO, FileName));
         assert_eq!(
-            nodes
-                .iter()
-                .filter(|node| !node.is_dir && node.allocated > 0)
-                .count(),
-            1,
-            "ADS allocation is shared by hard-link aliases"
+            extd.id,
+            Some((offset_of!(FILE_ID_EXTD_DIR_INFO, FileId), 16))
         );
+        assert_eq!(extd.tag, offset_of!(FILE_ID_EXTD_DIR_INFO, ReparsePointTag));
+        assert_eq!(both.name, offset_of!(FILE_ID_BOTH_DIR_INFO, FileName));
+        assert_eq!(
+            both.id,
+            Some((offset_of!(FILE_ID_BOTH_DIR_INFO, FileId), 8))
+        );
+        assert_eq!(both.tag, offset_of!(FILE_ID_BOTH_DIR_INFO, EaSize));
+        assert_eq!(full.name, offset_of!(FILE_FULL_DIR_INFO, FileName));
+        assert_eq!(full.id, None);
+        assert_eq!(full.tag, offset_of!(FILE_FULL_DIR_INFO, EaSize));
+        // The parser reads these from every layout at the same offsets.
+        assert_eq!(offset_of!(FILE_ID_BOTH_DIR_INFO, EndOfFile), 40);
+        assert_eq!(offset_of!(FILE_FULL_DIR_INFO, AllocationSize), 48);
+        assert_eq!(offset_of!(FILE_ID_EXTD_DIR_INFO, FileAttributes), 56);
+        assert_eq!(offset_of!(FILE_FULL_DIR_INFO, FileNameLength), 60);
+    }
+
+    #[test]
+    fn listing_parser_keeps_names_and_rejects_malformed_records() {
+        let layout = listing::LAYOUTS[0];
+        let dots = listing_record("..", 0, 0, 16);
+        let first = listing_record("Grüße.txt", 0, 12, 32);
+        let mut buffer = dots.clone();
+        buffer[0..4].copy_from_slice(&(dots.len() as u32).to_le_bytes());
+        let at = buffer.len();
+        buffer.extend(&first);
+        buffer[at..at + 4].copy_from_slice(&(first.len() as u32).to_le_bytes());
+        buffer.extend(listing_record("Ordner", 0, 0, 16));
+        let mut entries = Vec::new();
+        listing::parse(&buffer, layout, &mut entries).unwrap();
+        let names: Vec<_> = entries
+            .iter()
+            .map(|e| String::from_utf16_lossy(&e.name))
+            .collect();
+        assert_eq!(names, ["Grüße.txt", "Ordner"], "dot entries are skipped");
+        assert_eq!((entries[0].logical, entries[0].allocated), (12, 4096));
+        assert_eq!(entries[0].id[..8], 7u64.to_le_bytes());
+
+        // A name must never step outside its folder or address a stream.
+        for name in [r"..\escape", "a/b", "file:stream", "nul\0"] {
+            let record = listing_record(name, 0, 1, 32);
+            assert!(
+                listing::parse(&record, layout, &mut Vec::new()).is_err(),
+                "{name:?}"
+            );
+        }
+        let mut negative = listing_record("x", 0, -1, 32);
+        assert!(listing::parse(&negative, layout, &mut Vec::new()).is_err());
+        negative[40..48].copy_from_slice(&1i64.to_le_bytes());
+        for next in [4u32, 12, negative.len() as u32, u32::MAX] {
+            let mut record = negative.clone();
+            record[0..4].copy_from_slice(&next.to_le_bytes());
+            assert!(
+                listing::parse(&record, layout, &mut Vec::new()).is_err(),
+                "{next}"
+            );
+        }
+        for length in [0u32, 3, u32::MAX] {
+            let mut record = negative.clone();
+            record[60..64].copy_from_slice(&length.to_le_bytes());
+            assert!(
+                listing::parse(&record, layout, &mut Vec::new()).is_err(),
+                "{length}"
+            );
+        }
+        assert!(listing::parse(&negative[..80], layout, &mut Vec::new()).is_err());
+        // Any single corrupted byte is either parsed or rejected, never a panic.
+        for index in 0..buffer.len() {
+            let mut corrupt = buffer.clone();
+            corrupt[index] ^= 0xa5;
+            let _ = listing::parse(&corrupt, layout, &mut Vec::new());
+        }
     }
 
     #[test]
@@ -521,7 +630,11 @@ mod windows_tests {
             .unwrap();
         let (nodes, summary) = collect_scan(fixture.path());
         assert_eq!(summary.errors, 0);
-        assert!(nodes.iter().any(|n| n.path == path && n.logical == 1024));
+        assert!(
+            nodes
+                .iter()
+                .any(|n| super::node_path(&nodes, n.id) == path && n.logical == 1024)
+        );
         drop(locked);
     }
 
@@ -613,6 +726,9 @@ mod windows_tests {
             "directory listing permission must be enforced"
         );
         assert!(!nodes.iter().any(|n| n.name == "unreadable.bin"));
+        // One refused folder counts once, even when both opening it and
+        // listing it fail, so the page can offer an administrator scan.
+        assert_eq!(summary.denied, 1, "{:?}", summary.notes);
         let denied_id = nodes.iter().find(|n| n.name == "denied").unwrap().id;
         assert!(summary.incomplete_nodes.contains(&denied_id));
         assert_eq!(export_status(Some(&summary)), "partial");
@@ -777,6 +893,35 @@ mod windows_tests {
     }
 
     #[test]
+    fn locked_files_keep_their_length_as_an_allocation_lower_bound() {
+        let fixture = tempfile::tempdir().unwrap();
+        let large = fixture.path().join("large.bin");
+        fs::write(&large, vec![1u8; 8192]).unwrap();
+        let small = fixture.path().join("small.txt");
+        fs::write(&small, b"resident").unwrap();
+        let bound = |path: &Path| {
+            native::locked_allocation_lower_bound(&fs::symlink_metadata(path).unwrap())
+        };
+        assert_eq!(bound(&large), 8192);
+        assert_eq!(
+            bound(&small),
+            0,
+            "MFT-resident files may have no allocation"
+        );
+        assert_eq!(bound(fixture.path()), 0);
+        // The real case: Windows keeps the paging file open exclusively.
+        let pagefile = Path::new(r"C:\pagefile.sys");
+        if let Ok(metadata) = fs::symlink_metadata(pagefile)
+            && native::metadata_handle(pagefile).is_err()
+        {
+            let entry = native::read_entry(pagefile, &metadata);
+            assert_eq!(entry.errors, 1);
+            assert_eq!(entry.allocated, metadata.len());
+            assert!(entry.allocated > 0);
+        }
+    }
+
+    #[test]
     fn device_and_alternate_stream_user_paths_are_rejected_without_opening() {
         for path in [
             r"\\.\PhysicalDrive0",
@@ -803,6 +948,32 @@ mod windows_tests {
         assert_eq!(fs::read(&source).unwrap(), b"unchanged");
         assert!(fs::symlink_metadata(&stream).is_err());
         assert!(native::validate_path(&fixture.path().join("COM10-report.txt")).is_ok());
+    }
+
+    #[test]
+    fn bare_drive_letters_mean_the_drive_root_not_the_current_directory() {
+        // Windows resolves `C:` to the process's current directory on C, so a
+        // user typing a drive letter would silently scan an unrelated folder.
+        assert_eq!(checked_path(Path::new("C:")).unwrap(), Path::new(r"C:\"));
+        assert_eq!(checked_path(Path::new("d:")).unwrap(), Path::new(r"d:\"));
+        assert_eq!(checked_path(Path::new(r"C:\")).unwrap(), Path::new(r"C:\"));
+        for relative in ["C:Windows", r"C:Users\Public", "C:."] {
+            let error = checked_path(Path::new(relative)).unwrap_err();
+            assert!(error.contains("drive-relative"), "{relative}: {error}");
+        }
+    }
+
+    #[test]
+    fn pasted_paths_lose_surrounding_quotes_and_whitespace() {
+        // Explorer's "Copy as path" wraps the path in double quotes.
+        assert_eq!(
+            scan_input_path(r#"  "C:\Data\Photos"  "#),
+            r"C:\Data\Photos"
+        );
+        assert_eq!(scan_input_path(" D:\\ \t"), r"D:\");
+        assert_eq!(scan_input_path(r"C:\plain"), r"C:\plain");
+        assert_eq!(scan_input_path(r#""unbalanced"#), r#""unbalanced"#);
+        assert_eq!(scan_input_path(r#""""#), "");
     }
 
     #[test]

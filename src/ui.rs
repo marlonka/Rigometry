@@ -1222,11 +1222,7 @@ impl App {
         let lower_bound = if partial { "≥ " } else { "" };
         let totals = [
             (
-                "Logical",
-                format!("{lower_bound}{}", ui_bytes(ui, scope_logical)),
-            ),
-            (
-                "Allocated",
+                "On disk",
                 format!("{lower_bound}{}", ui_bytes(ui, scope_allocated)),
             ),
             (
@@ -1239,7 +1235,7 @@ impl App {
                 summary_row(ui, label, value, None);
             }
         } else {
-            ui.columns(3, |columns| {
+            ui.columns(2, |columns| {
                 for (column, (label, value)) in columns.iter_mut().zip(&totals) {
                     column.label(
                         RichText::new(tx(column, *label))
@@ -1250,16 +1246,46 @@ impl App {
                 }
             });
         }
+        // File sizes only add information where compression, sparse files or
+        // cluster rounding make them differ noticeably from bytes on disk.
+        if scope_logical.abs_diff(scope_allocated) > scope_allocated.max(scope_logical) / 100 {
+            ui.label(
+                RichText::new(td(
+                    ui,
+                    format!("File size: {lower_bound}{}", ui_bytes(ui, scope_logical)),
+                ))
+                .size(12.)
+                .color(muted(ui)),
+            );
+        }
         ui.add_space(6.);
-        ui.label(
-            RichText::new(scan_status(&self.state))
-                .color(if self.state.scan.is_some() {
-                    GPU
-                } else {
-                    muted(ui)
-                })
-                .size(12.),
-        );
+        ui.horizontal_wrapped(|ui| {
+            ui.label(
+                RichText::new(scan_status(&self.state))
+                    .color(if self.state.scan.is_some() {
+                        GPU
+                    } else {
+                        muted(ui)
+                    })
+                    .size(12.),
+            );
+            let denied = self.state.summary.as_ref().is_some_and(|s| s.denied > 0);
+            if denied
+                && self.state.scan.is_none()
+                && !self.state.nodes.is_empty()
+                && !elevated()
+                && ui
+                    .small_button(tx(ui, "Scan as administrator"))
+                    .on_hover_text(tx(ui, "Windows protects some system folders from standard accounts. Rigometry restarts with administrator rights and scans this path again, still reading metadata only."))
+                    .clicked()
+            {
+                let root = crate::storage::node_path(&self.state.nodes, 0);
+                match relaunch_elevated(&root) {
+                    Ok(()) => ui.ctx().send_viewport_cmd(ViewportCommand::Close),
+                    Err(error) => self.state.notice = Some(error),
+                }
+            }
+        });
         ui.add_space(10.);
         let mut crumbs = vec![self.state.scope];
         let mut parent = self.state.nodes[self.state.scope].parent;
@@ -1273,13 +1299,25 @@ impl App {
                 if i > 0 {
                     ui.label(RichText::new("/").color(muted(ui)));
                 }
-                if ui.small_button(&self.state.nodes[*id].name).clicked() {
+                // The scan root's name is its full path; show only its last
+                // part, as for every other folder, and the path on hover.
+                let name = &self.state.nodes[*id].name;
+                let short = std::path::Path::new(name)
+                    .file_name()
+                    .map_or(name.clone(), |n| n.to_string_lossy().into_owned());
+                let crumb = ui.small_button(&short);
+                let crumb = if short == *name {
+                    crumb
+                } else {
+                    crumb.on_hover_text(name)
+                };
+                if crumb.clicked() {
                     self.state.navigate_scope(*id);
                 }
             }
         });
         ui.add_space(8.);
-        let split = ui.available_width() >= 980.;
+        let split = ui.available_width() >= 840.;
         // Stable control IDs while asynchronous drive discovery changes the
         // number of widgets above this toolbar.
         ui.push_id("storage-view-tabs", |ui| {
@@ -1293,7 +1331,7 @@ impl App {
                 {
                     self.state.largest = false;
                     self.state.map_only = false;
-                    self.state.dirty = true;
+                    self.state.refresh_now();
                 }
                 if ui
                     .selectable_label(
@@ -1304,9 +1342,9 @@ impl App {
                 {
                     self.state.largest = true;
                     self.state.map_only = false;
-                    self.state.sort = Sort::Logical;
+                    self.state.sort = Sort::Allocated;
                     self.state.descending = true;
-                    self.state.dirty = true;
+                    self.state.refresh_now();
                 }
                 if ui
                     .selectable_label(self.state.map_only, tx(ui, "Map"))
@@ -1318,10 +1356,12 @@ impl App {
         });
         ui.add_space(4.);
         ui.push_id("storage-filter-export", |ui| ui.horizontal_wrapped(|ui| {
-            let filter_label = ui.label(tx(ui, "Filter"));
+            let filter_label = ui.label(tx(ui, "Search"));
             let filter_width = (ui.available_width() - 136.).clamp(120., 380.);
-            if ui.add_sized([filter_width, 30.], TextEdit::singleline(&mut self.state.filter).id(Id::new("scan-filter")).hint_text(tx(ui, "Name or path"))).labelled_by(filter_label.id).changed() {
-                self.state.dirty = true;
+            let search = ui.add_sized([filter_width, 30.], TextEdit::singleline(&mut self.state.filter).id(Id::new("scan-filter")).hint_text(tx(ui, "Name, folder or ext:pdf size:>1g"))).labelled_by(filter_label.id);
+            let search = search.on_hover_text(tx(ui, "Words match names and the folders above them. Words of five or more letters forgive one typo.\n'exact   ^prefix   suffix$   !exclude   \"two words\"\next:mp4,mkv   kind:file   kind:dir   path:text\nsize:>500m   size:1g..4g   (k m g t = KiB MiB GiB TiB; kb mb gb tb are decimal)\ntype: image, video, audio, doc, code, archive, disk, app, font"));
+            if search.changed() {
+                self.state.filter_changed();
             }
             let can_export = self.state.scan.is_none() && self.state.task.is_none();
             ui.add_enabled_ui(can_export, |ui| {
@@ -1332,6 +1372,24 @@ impl App {
                 }
             });
         }));
+        if let Some(error) = &self.state.search_error {
+            ui.add_space(4.);
+            ui.label(
+                RichText::new(td(ui, error))
+                    .size(12.)
+                    .color(ui.visuals().warn_fg_color),
+            );
+        } else if !self.state.filter.trim().is_empty()
+            && self.state.visible.is_empty()
+            && self.state.visible_filter == self.state.filter
+        {
+            ui.add_space(4.);
+            ui.label(
+                RichText::new(tx(ui, "No matches below this folder"))
+                    .size(12.)
+                    .color(muted(ui)),
+            );
+        }
         ui.add_space(16.);
         let viewport_height = ui.ctx().content_rect().height();
         // Measure content consumed above the results, independent of scrolling.
@@ -1342,11 +1400,17 @@ impl App {
             self.storage_map(ui, height)
         } else if split {
             let width = ui.available_width();
-            let map_width = (width * 0.32).clamp(280., 420.);
+            // Names truncate with a tooltip; the size map gets the rest of the row.
+            let table_width = (width * 0.25).clamp(220., 420.) + 324.;
+            let map_width = width - table_width - 18.;
+            // Beside a short list, the map ends with the list instead of
+            // pushing the actions below into empty space.
+            let rows = 48. + 30. * self.state.visible.len() as f32;
+            let map_height = (rows - 12.).clamp(150., height);
             ui.horizontal_top(|ui| {
                 let table_clicked = ui
                     .allocate_ui_with_layout(
-                        vec2(width - map_width - 18., 0.),
+                        vec2(table_width, 0.),
                         Layout::top_down(Align::Min),
                         |ui| self.storage_table(ui),
                     )
@@ -1356,7 +1420,7 @@ impl App {
                     .allocate_ui_with_layout(
                         vec2(map_width, 0.),
                         Layout::top_down(Align::Min),
-                        |ui| self.storage_map(ui, height),
+                        |ui| self.storage_map(ui, map_height),
                     )
                     .inner;
                 table_clicked.or(map_clicked)
@@ -1368,39 +1432,25 @@ impl App {
         if let Some(id) = clicked {
             self.state.navigate_scope(id);
         }
-        let total = self.state.nodes[self.state.scope].logical;
+        let total = self.state.nodes[self.state.scope].allocated;
         ui.add_space(10.);
         let node = &self.state.nodes[self.state.selected];
-        let path = node.path.clone();
+        let path = crate::storage::node_path(&self.state.nodes, self.state.selected);
         let is_dir = node.is_dir;
-        if ui.available_width() < 640. {
-            ui.horizontal_wrapped(|ui| {
-                ui.label(
-                    RichText::new(td(ui, format!("Allocated: {}", node_size(ui, node, true))))
-                        .monospace()
-                        .size(12.),
-                );
-                ui.label(
-                    RichText::new(td(
-                        ui,
-                        format!(
-                            "Scope: {}%",
-                            i18n::language(ui).decimal(
-                                if total == 0 {
-                                    0.
-                                } else {
-                                    node.logical as f64 / total as f64 * 100.
-                                },
-                                1
-                            )
-                        ),
-                    ))
-                    .monospace()
-                    .size(12.),
-                );
-            });
-        }
-        copy_label(ui, &path.to_string_lossy(), 12., muted(ui));
+        ui.horizontal_wrapped(|ui| {
+            copy_label(ui, &path.to_string_lossy(), 12., muted(ui));
+            for text in [
+                format!("On disk: {}", node_size(ui, node, true)),
+                format!("File size: {}", node_size(ui, node, false)),
+                format!(
+                    "Scope: {}%",
+                    i18n::language(ui).decimal(share(node.allocated, total), 1)
+                ),
+            ] {
+                ui.label(RichText::new("·").size(12.).color(muted(ui)));
+                ui.label(RichText::new(td(ui, text)).size(12.).color(muted(ui)));
+            }
+        });
         ui.horizontal_wrapped(|ui| {
             if ui.button(tx(ui, "Copy path")).clicked() {
                 ui.ctx().copy_text(path.to_string_lossy().into());
@@ -1426,17 +1476,21 @@ impl App {
             );
         });
         if let Some(summary) = &self.state.summary {
-            folding(ui, tx(ui, "Scan accounting & skipped entries")).id_salt("scan-notes").show(ui,|ui|{ui.label(td(ui, format!("{} errors · {} reparse points · {} cloud placeholders · {} hard-link aliases",summary.errors,summary.skipped_reparse,summary.skipped_cloud,summary.hard_links))); for note in &summary.notes{ui.label(td(ui, note));} });
+            folding(ui, tx(ui, "Scan accounting & skipped entries")).id_salt("scan-notes").show(ui,|ui|{ui.label(td(ui, format!("{} errors · {} reparse points · {} cloud placeholders · {} hard-link aliases",summary.errors,summary.skipped_reparse,summary.skipped_cloud,summary.hard_links))); if summary.denied + summary.locked > 0 { ui.label(td(ui, format!("{} access denied · {} in use by Windows", summary.denied, summary.locked))); } for note in &summary.notes{ui.label(td(ui, note));} });
         }
     }
     fn storage_table(&mut self, ui: &mut Ui) -> Option<usize> {
         let compact = ui.available_width() < 640.;
-        let total = self.state.nodes[self.state.scope].logical;
+        // Counting files only says something about folders; the largest-files
+        // list has none, so it drops the column.
+        let counts = !self.state.largest;
+        let total = self.state.nodes[self.state.scope].allocated;
         let mut clicked = None;
         let mut toggle = None;
         let mut new_sort = None;
+        let mut action = None;
         let mut table = TableBuilder::new(ui)
-            .id_salt(("files", self.state.scan_generation, compact))
+            .id_salt(("files", self.state.scan_generation, compact, counts))
             // TableBody::rows virtualizes against the outer page clip rect.
             // One scrollbar therefore remains efficient for very large scans.
             .vscroll(false)
@@ -1448,23 +1502,22 @@ impl App {
             .sense(Sense::click())
             .column(Column::remainder().clip(true))
             .column(Column::exact(104.).clip(true));
-        if !compact {
-            table = table.column(Column::exact(104.).clip(true));
+        if counts {
+            table = table.column(Column::exact(if compact { 70. } else { 84. }).clip(true));
         }
-        table = table.column(Column::exact(if compact { 70. } else { 84. }).clip(true));
         if !compact {
             table = table.column(Column::exact(60.).clip(true));
         }
+        table = table.column(Column::exact(36.));
         table
             .header(48., |mut h| {
                 for (label, sort) in [
                     ("Name", Some(Sort::Name)),
-                    ("Logical", Some(Sort::Logical)),
-                    ("Allocated", Some(Sort::Allocated)),
+                    ("On disk", Some(Sort::Allocated)),
                     ("Files", Some(Sort::Files)),
                     ("Scope %", None),
                 ] {
-                    if compact && (sort == Some(Sort::Allocated) || sort.is_none()) {
+                    if (compact && sort.is_none()) || (!counts && sort == Some(Sort::Files)) {
                         continue;
                     }
                     h.col(|ui| {
@@ -1491,6 +1544,7 @@ impl App {
                         }
                     });
                 }
+                h.col(|_| {});
             })
             .body(|body| {
                 body.rows(30., self.state.visible.len(), |mut row| {
@@ -1512,72 +1566,67 @@ impl App {
                         }
                         let response =
                             ui.add(Label::new(&node.name).truncate().sense(Sense::click()));
-                        if response.clicked() {
+                        if response.clicked() || response.secondary_clicked() {
                             self.state.selected = id;
                         }
                         if response.double_clicked() && node.is_dir {
                             clicked = Some(id);
                         }
+                        entry_menu(&response, node, &mut action);
                         response.on_hover_text(td(
                             ui,
                             format!(
-                                "{}\nLogical: {}\nAllocated: {}\nScope: {}%\n{}",
-                                node.path.display(),
-                                node_size(ui, node, false),
+                                "{}\nOn disk: {}\nFile size: {}\nScope: {}%\n{}",
+                                crate::storage::node_path(&self.state.nodes, id).display(),
                                 node_size(ui, node, true),
-                                i18n::language(ui).decimal(
-                                    if total == 0 {
-                                        0.
-                                    } else {
-                                        node.logical as f64 / total as f64 * 100.
-                                    },
-                                    1
-                                ),
+                                node_size(ui, node, false),
+                                i18n::language(ui).decimal(share(node.allocated, total), 1),
                                 td(ui, &node.note)
                             ),
                         ));
                     });
                     row.col(|ui| {
-                        let value = node_size(ui, node, false);
+                        let value = node_size(ui, node, true);
                         numeric_value(ui, &value, ui.available_width(), 12.).on_hover_text(&value);
                     });
-                    if !compact {
+                    if counts {
                         row.col(|ui| {
-                            let value = node_size(ui, node, true);
-                            numeric_value(ui, &value, ui.available_width(), 12.)
-                                .on_hover_text(&value);
+                            if !node.is_dir {
+                                return;
+                            }
+                            let lang = i18n::language(ui);
+                            let count = if node.incomplete || self.state.scan.is_some() {
+                                format!("≥ {}", lang.integer(node.files))
+                            } else {
+                                lang.integer(node.files)
+                            };
+                            numeric_value(ui, &count, ui.available_width(), 12.)
+                                .on_hover_text(&count);
                         });
                     }
-                    row.col(|ui| {
-                        let count = if node.is_dir && (node.incomplete || self.state.scan.is_some())
-                        {
-                            format!("≥ {}", i18n::language(ui).integer(node.files))
-                        } else {
-                            i18n::language(ui).integer(node.files)
-                        };
-                        numeric_value(ui, &count, ui.available_width(), 12.).on_hover_text(&count);
-                    });
                     if !compact {
                         row.col(|ui| {
-                            let value = if total == 0 {
-                                i18n::language(ui).decimal(0., 1)
-                            } else {
-                                i18n::language(ui)
-                                    .decimal(node.logical as f64 / total as f64 * 100., 1)
-                            };
+                            let value = i18n::language(ui).decimal(share(node.allocated, total), 1);
                             numeric_value(ui, &value, ui.available_width(), 12.);
                         });
                     }
-                    if row.response().clicked() {
+                    row.col(|ui| {
+                        if reveal_button(ui, &node.name).clicked() {
+                            action = Some(EntryAction::Reveal(id));
+                        }
+                    });
+                    let response = row.response();
+                    if response.clicked() || response.secondary_clicked() {
                         self.state.selected = id;
                     }
+                    entry_menu(&response, node, &mut action);
                 });
             });
         if let Some(id) = toggle {
             if !self.state.expanded.remove(&id) {
                 self.state.expanded.insert(id);
             }
-            self.state.dirty = true;
+            self.state.refresh_now();
         }
         if let Some(sort) = new_sort {
             if self.state.sort == sort {
@@ -1586,13 +1635,34 @@ impl App {
                 self.state.sort = sort;
                 self.state.descending = sort != Sort::Name;
             }
-            self.state.dirty = true;
+            self.state.refresh_now();
         }
+        self.apply_entry_action(ui, action);
         clicked
+    }
+    fn apply_entry_action(&mut self, ui: &Ui, action: Option<EntryAction>) {
+        match action {
+            Some(EntryAction::Reveal(id)) => {
+                self.state.selected = id;
+                if let Err(error) = reveal(&crate::storage::node_path(&self.state.nodes, id)) {
+                    self.state.notice = Some(error);
+                }
+            }
+            Some(EntryAction::CopyPath(id)) => {
+                ui.ctx().copy_text(
+                    crate::storage::node_path(&self.state.nodes, id)
+                        .to_string_lossy()
+                        .into(),
+                );
+            }
+            Some(EntryAction::Open(id)) => self.state.navigate_scope(id),
+            None => {}
+        }
     }
     fn storage_map(&mut self, ui: &mut Ui, height: f32) -> Option<usize> {
         let mut clicked = None;
-        ui.label(RichText::new(tx(ui, "Logical size map")).size(15.));
+        let mut action = None;
+        ui.label(RichText::new(tx(ui, "Size map")).size(15.));
         ui.add_space(8.);
         let (rect, _) =
             ui.allocate_exact_size(vec2(ui.available_width(), height - 40.), Sense::hover());
@@ -1621,7 +1691,7 @@ impl App {
                     Id::new(("tile", self.state.scan_generation, id)),
                     Sense::click(),
                 );
-                let accessible_label = format!("{} {}", node.name, node_size(ui, node, false));
+                let accessible_label = format!("{} {}", node.name, node_size(ui, node, true));
                 response.widget_info(|| {
                     WidgetInfo::labeled(WidgetType::Button, true, &accessible_label)
                 });
@@ -1653,7 +1723,7 @@ impl App {
                             9.,
                         ),
                         (
-                            node_size(ui, node, false),
+                            node_size(ui, node, true),
                             FontId::monospace(11.),
                             Color32::from_gray(210),
                             29.,
@@ -1667,30 +1737,31 @@ impl App {
                         p.galley(r.left_top() + vec2(9., y), galley, color);
                     }
                 }
-                if response.clicked() {
+                if response.clicked() || response.secondary_clicked() {
                     self.state.selected = id;
                 }
                 if response.double_clicked() && node.is_dir {
                     clicked = Some(id);
                 }
+                entry_menu(&response, node, &mut action);
                 response.on_hover_text(td(
                     ui,
                     format!(
-                        "{}\n{} logical · {} allocated\nDouble-click a folder to open",
-                        node.path.display(),
-                        node_size(ui, node, false),
-                        node_size(ui, node, true)
+                        "{}\n{} on disk · {} file size\nDouble-click a folder to open",
+                        crate::storage::node_path(&self.state.nodes, id).display(),
+                        node_size(ui, node, true),
+                        node_size(ui, node, false)
                     ),
                 ));
             }
         }
         ui.add_space(10.);
         ui.label(
-            RichText::new(tx(ui, "Area = logical bytes · double-click to open"))
+            RichText::new(tx(ui, "Area = size on disk · double-click to open"))
                 .size(12.)
                 .color(muted(ui)),
         );
-
+        self.apply_entry_action(ui, action);
         clicked
     }
     fn diagnostics(&mut self, ui: &mut Ui) {
@@ -1842,7 +1913,7 @@ impl App {
         });
         ui.add_space(24.);
         section(ui, "Storage accounting", |ui| {
-            ui.label(tx(ui, "Logical bytes count every file path and data stream. Allocated bytes count each file identity once across hard links. Directory and volume metadata overhead is excluded."));
+            ui.label(tx(ui, "Logical bytes count every file path. Allocated bytes count each file identity once across hard links. Named data streams are included only in administrator scans of a whole drive. Directory and volume metadata overhead is excluded."));
             ui.add_space(8.);
             ui.label(tx(ui, "Scans skip reparse points and cloud placeholders. Files may change during a scan; partial results and read errors remain visible."));
         });
@@ -2997,35 +3068,117 @@ fn node_size(ui: &Ui, node: &crate::storage::ScanNode, allocated: bool) -> Strin
         node.logical
     };
     if node.incomplete {
-        if node.is_dir {
+        if node.is_dir || value > 0 {
             format!("≥ {}", ui_bytes(ui, value))
         } else {
-            "Unavailable".into()
+            tx(ui, "Unavailable")
         }
     } else {
         ui_bytes(ui, value)
     }
 }
+fn share(part: u64, total: u64) -> f64 {
+    if total == 0 {
+        0.
+    } else {
+        part as f64 / total as f64 * 100.
+    }
+}
+#[derive(Clone, Copy)]
+enum EntryAction {
+    Reveal(usize),
+    CopyPath(usize),
+    Open(usize),
+}
+/// Right-click menu shared by table rows, names and map tiles.
+fn entry_menu(
+    response: &Response,
+    node: &crate::storage::ScanNode,
+    action: &mut Option<EntryAction>,
+) {
+    response.context_menu(|ui| {
+        if ui.button(tx(ui, "Reveal in Explorer")).clicked() {
+            *action = Some(EntryAction::Reveal(node.id));
+            ui.close();
+        }
+        if ui.button(tx(ui, "Copy path")).clicked() {
+            *action = Some(EntryAction::CopyPath(node.id));
+            ui.close();
+        }
+        if node.is_dir && ui.button(tx(ui, "Open folder")).clicked() {
+            *action = Some(EntryAction::Open(node.id));
+            ui.close();
+        }
+    });
+}
+/// A folder with an outgoing arrow, drawn on the app's 24-unit icon grid.
+fn reveal_button(ui: &mut Ui, name: &str) -> Response {
+    let label = format!("{} {name}", tx(ui, "Reveal in Explorer"));
+    let response = ui.add_sized([28., 28.], Button::new("").frame(false));
+    response.widget_info(|| WidgetInfo::labeled(WidgetType::Button, ui.is_enabled(), &label));
+    let color = if response.hovered() {
+        ui.visuals().text_color()
+    } else {
+        muted(ui)
+    };
+    let r = Rect::from_center_size(response.rect.center(), vec2(18., 18.));
+    let scale = r.width() / 24.;
+    let stroke = Stroke::new(1.8 * scale, color);
+    let point = |x: f32, y: f32| r.min + vec2(x, y) * scale;
+    let p = ui.painter();
+    p.add(Shape::line(
+        vec![
+            point(12., 20.),
+            point(3., 20.),
+            point(3., 5.),
+            point(9., 5.),
+            point(11., 7.5),
+            point(20., 7.5),
+            point(20., 11.),
+        ],
+        stroke,
+    ));
+    p.line_segment([point(14., 19.), point(21., 12.)], stroke);
+    p.add(Shape::line(
+        vec![point(16., 12.), point(21., 12.), point(21., 17.)],
+        stroke,
+    ));
+    response.on_hover_text(label)
+}
 fn scan_status(state: &State) -> String {
     let lang = state.settings.language.resolve();
     if let Some(s) = &state.summary {
+        // Refused and locked entries are expected on system drives: protected
+        // folders need an administrator, files Windows holds open keep lower
+        // bounds. Only other errors make a scan partial.
+        let other = s.errors.saturating_sub(s.denied.saturating_add(s.locked));
         let status = if s.cancelled {
             "Partial · cancelled"
-        } else if s.errors > 0 || s.stopped_early || !s.incomplete_nodes.is_empty() {
+        } else if s.stopped_early {
+            "Partial · stopped early"
+        } else if other > 0 {
             "Partial"
-        } else if s.skipped_cloud > 0 || s.skipped_reparse > 0 {
+        } else if s.denied > 0 || s.skipped_cloud > 0 || s.skipped_reparse > 0 {
             "Complete with exclusions"
         } else {
             "Complete"
         };
-        lang.format(
-            "{0} · {1} s · {2} errors",
+        let mut text = lang.format(
+            "{0} · {1} s",
             &[
                 lang.text(status),
                 lang.decimal(s.elapsed_ms as f64 / 1000., 2),
-                lang.integer(s.errors),
             ],
-        )
+        );
+        if s.denied > 0 {
+            text += " · ";
+            text += &lang.format("{0} need administrator rights", &[lang.integer(s.denied)]);
+        }
+        if other > 0 {
+            text += " · ";
+            text += &lang.format("{0} errors", &[lang.integer(other)]);
+        }
+        text
     } else if let Some(scan) = &state.scan {
         let status = if scan.cancel.load(std::sync::atomic::Ordering::Relaxed) {
             "Cancelling"
@@ -3045,6 +3198,73 @@ fn scan_status(state: &State) -> String {
     }
 }
 
+/// Whether this process already has administrator rights.
+fn elevated() -> bool {
+    use windows::Win32::{
+        Foundation::{CloseHandle, HANDLE},
+        Security::{GetTokenInformation, TOKEN_ELEVATION, TOKEN_QUERY, TokenElevation},
+        System::Threading::{GetCurrentProcess, OpenProcessToken},
+    };
+    static ELEVATED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ELEVATED.get_or_init(|| unsafe {
+        let mut token = HANDLE::default();
+        if OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token).is_err() {
+            return false;
+        }
+        let mut elevation = TOKEN_ELEVATION::default();
+        let mut size = 0;
+        let queried = GetTokenInformation(
+            token,
+            TokenElevation,
+            Some((&mut elevation as *mut TOKEN_ELEVATION).cast()),
+            size_of::<TOKEN_ELEVATION>() as u32,
+            &mut size,
+        );
+        let _ = CloseHandle(token);
+        queried.is_ok() && elevation.TokenIsElevated != 0
+    })
+}
+/// Starts this executable again with administrator rights, scanning `path`.
+/// Windows asks the user for consent; declining returns an error.
+fn relaunch_elevated(path: &std::path::Path) -> Result<(), String> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows::{
+        Win32::UI::{Shell::ShellExecuteW, WindowsAndMessaging::SW_SHOWNORMAL},
+        core::{PCWSTR, w},
+    };
+    let wide = |s: &std::ffi::OsStr| s.encode_wide().chain(Some(0)).collect::<Vec<u16>>();
+    let executable = std::env::current_exe().map_err(|error| error.to_string())?;
+    let parameters = wide(scan_argument(path)?.as_ref());
+    let executable = wide(executable.as_os_str());
+    let result = unsafe {
+        ShellExecuteW(
+            None,
+            w!("runas"),
+            PCWSTR(executable.as_ptr()),
+            PCWSTR(parameters.as_ptr()),
+            PCWSTR::null(),
+            SW_SHOWNORMAL,
+        )
+    };
+    // Values above 32 mean success; lower values are ShellExecute error codes.
+    if result.0 as usize > 32 {
+        Ok(())
+    } else {
+        Err("Administrator scan was not started".into())
+    }
+}
+/// `--scan "path"` for a Windows command line. Paths cannot contain quotes;
+/// backslashes before the closing quote are doubled so it stays a quote.
+fn scan_argument(path: &std::path::Path) -> Result<std::ffi::OsString, String> {
+    let text = path
+        .to_str()
+        .ok_or("Path cannot be passed to a new process")?;
+    if text.contains(['"', '\0']) {
+        return Err("Path cannot be passed to a new process".into());
+    }
+    let trailing = text.len() - text.trim_end_matches('\\').len();
+    Ok(format!("--scan \"{text}{}\"", "\\".repeat(trailing)).into())
+}
 fn reveal(path: &std::path::Path) -> Result<(), String> {
     explorer_command(path)?
         .spawn()
@@ -3285,14 +3505,14 @@ pub fn treemap_tiles(
             out.push((ids[0], rect));
             return;
         }
-        let total: f64 = ids.iter().map(|id| nodes[*id].logical as f64).sum();
+        let total: f64 = ids.iter().map(|id| nodes[*id].allocated as f64).sum();
         if total <= 0. {
             return;
         }
         let mut sum = 0.;
         let mut cut = 1;
         for (i, id) in ids.iter().enumerate().take(ids.len() - 1) {
-            sum += nodes[*id].logical as f64;
+            sum += nodes[*id].allocated as f64;
             cut = i + 1;
             if sum >= total / 2. {
                 break;

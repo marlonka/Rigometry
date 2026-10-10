@@ -3,6 +3,7 @@ mod branding;
 mod hardware;
 mod i18n;
 mod model;
+mod search;
 mod state;
 mod storage;
 mod ui;
@@ -96,7 +97,27 @@ fn requested_window_size(args: &[String]) -> Option<eframe::egui::Vec2> {
     (width.is_finite() && height.is_finite() && width > 0. && height > 0.)
         .then(|| eframe::egui::vec2(width.clamp(1080., 3840.), height.clamp(720., 2160.)))
 }
+/// Release builds use the GUI subsystem, so a terminal gives them no console:
+/// `--help`, `--version` and errors would print nothing. Attach to the
+/// parent's console when there is one and output is not already redirected.
+#[cfg(all(windows, not(debug_assertions)))]
+fn attach_parent_console() {
+    use windows::Win32::System::Console::{
+        ATTACH_PARENT_PROCESS, AttachConsole, GetStdHandle, STD_OUTPUT_HANDLE,
+    };
+    let redirected = unsafe { GetStdHandle(STD_OUTPUT_HANDLE) }
+        .is_ok_and(|handle| !handle.is_invalid() && !handle.0.is_null());
+    if !redirected {
+        // Fails harmlessly when started from Explorer, which has no console.
+        let _ = unsafe { AttachConsole(ATTACH_PARENT_PROCESS) };
+    }
+}
+
 fn main() {
+    #[cfg(all(windows, not(debug_assertions)))]
+    if std::env::args_os().len() > 1 {
+        attach_parent_console();
+    }
     if let Err(error) = run() {
         let args: Vec<_> = std::env::args_os()
             .filter_map(|arg| arg.into_string().ok())

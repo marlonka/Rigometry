@@ -358,8 +358,8 @@ mod tests {
             "Enregistré : C:\\Unavailable\\{0}.csv"
         );
         assert_eq!(
-            Language::German.message("C:\\資料: invalid USN record length"),
-            "C:\\資料: ungültige USN-Datensatzlänge"
+            Language::German.message("C:\\資料: MFT index exceeded its 512 MiB memory budget"),
+            "C:\\資料: MFT-Index überschritt sein Speicherbudget von 512 MiB"
         );
         assert_eq!(
             Language::French.message("Sparse; NTFS compressed"),

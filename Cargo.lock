@@ -586,26 +586,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "rigometry"
-version = "0.1.0"
-dependencies = [
- "crossbeam-channel",
- "csv",
- "eframe",
- "egui_extras",
- "egui_kittest",
- "image",
- "libloading",
- "raw-cpuid",
- "rfd",
- "serde",
- "serde_json",
- "sysinfo",
- "tempfile",
- "windows 0.61.3",
-]
-
-[[package]]
 name = "clipboard-win"
 version = "5.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2612,6 +2592,26 @@ dependencies = [
  "wasm-bindgen-futures",
  "web-sys",
  "windows-sys 0.59.0",
+]
+
+[[package]]
+name = "rigometry"
+version = "0.2.0"
+dependencies = [
+ "crossbeam-channel",
+ "csv",
+ "eframe",
+ "egui_extras",
+ "egui_kittest",
+ "image",
+ "libloading",
+ "raw-cpuid",
+ "rfd",
+ "serde",
+ "serde_json",
+ "sysinfo",
+ "tempfile",
+ "windows 0.61.3",
 ]
 
 [[package]]

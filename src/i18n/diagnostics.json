@@ -690,22 +690,22 @@
     "Validación de la ruta del análisis"
   ],
   [
-    "Filesystem enumeration + file metadata",
-    "Dateisystemerfassung + Dateimetadaten",
-    "Énumération du système de fichiers + métadonnées",
-    "Enumeración del sistema de archivos + metadatos"
+    "Folder listings",
+    "Ordnerlisten",
+    "Listes des dossiers",
+    "Listados de carpetas"
   ],
   [
-    "Logical bytes include named data streams and each hard-link path; allocated bytes count each file identity once, attributed to its first scanned path.",
-    "Logische Bytes enthalten benannte Datenströme und jeden Hardlink-Pfad. Die Größe auf dem Datenträger zählt jede Datei einmal und ordnet sie dem zuerst erfassten Pfad zu.",
-    "La taille logique inclut les flux nommés et chaque chemin de lien physique. La taille allouée compte chaque fichier une fois, attribué au premier chemin analysé.",
-    "El tamaño lógico incluye flujos con nombre y cada ruta de enlace físico. El tamaño asignado cuenta cada archivo una vez y lo atribuye a la primera ruta analizada."
+    "Logical bytes count each hard-link path; allocated bytes count each file identity once, attributed to the first path listed.",
+    "Logische Bytes zählen jeden Hardlink-Pfad. Die Größe auf dem Datenträger zählt jede Datei einmal und ordnet sie dem zuerst gelisteten Pfad zu.",
+    "La taille logique compte chaque chemin de lien physique. La taille allouée compte chaque fichier une fois, attribué au premier chemin listé.",
+    "El tamaño lógico cuenta cada ruta de enlace físico. El tamaño asignado cuenta cada archivo una vez y lo atribuye a la primera ruta listada."
   ],
   [
-    "Directory data streams are included. Directory indexes, MFT records, security metadata, filesystem journals, snapshots and other volume overhead are excluded. Scanned totals are not volume used space.",
-    "Ordnerdatenströme sind enthalten. Ordnerindizes, MFT-Datensätze, Sicherheitsmetadaten, Dateisystemjournale, Schattenkopien und andere Volume-Verwaltungsdaten sind ausgeschlossen. Analysesummen entsprechen nicht der Volume-Belegung.",
-    "Les flux des dossiers sont inclus. Index, enregistrements MFT, métadonnées de sécurité, journaux, instantanés et autres données de gestion sont exclus. Les totaux ne correspondent pas à l’espace utilisé du volume.",
-    "Se incluyen los flujos de carpetas. Se excluyen índices, registros MFT, metadatos de seguridad, diarios, instantáneas y otros datos de gestión. Los totales no equivalen al espacio usado del volumen."
+    "Directory indexes, MFT records, security metadata, filesystem journals and other volume overhead are excluded. Scanned totals are not volume used space.",
+    "Ordnerindizes, MFT-Datensätze, Sicherheitsmetadaten, Dateisystemjournale und andere Volume-Verwaltungsdaten sind ausgeschlossen. Analysesummen entsprechen nicht der Volume-Belegung.",
+    "Index, enregistrements MFT, métadonnées de sécurité, journaux et autres données de gestion sont exclus. Les totaux ne correspondent pas à l’espace utilisé du volume.",
+    "Se excluyen índices, registros MFT, metadatos de seguridad, diarios y otros datos de gestión. Los totales no equivalen al espacio usado del volumen."
   ],
   [
     "Live scan, not a filesystem snapshot: files can change or disappear during enumeration. Reparse points and cloud placeholders are excluded without reading file contents.",
@@ -726,10 +726,10 @@
     "Cálculo parcial: {0} errores de metadatos o enumeración. Las entradas incompletas muestran mínimos conocidos; una asignación desconocida no suma bytes y no significa cero."
   ],
   [
-    "Scan metadata reached the 512 MiB memory budget; remaining entries were not scanned. Scan a smaller folder to continue.",
-    "Analysemetadaten erreichten das Speicherbudget von 512 MiB; übrige Einträge wurden nicht erfasst. Zum Fortfahren einen kleineren Ordner analysieren.",
-    "Les métadonnées ont atteint le budget de 512 MiB ; les éléments restants n’ont pas été analysés. Analysez un dossier plus petit.",
-    "Los metadatos alcanzaron el presupuesto de 512 MiB; no se analizaron las entradas restantes. Analiza una carpeta más pequeña."
+    "Scan metadata reached the 1.5 GiB memory budget; remaining entries were not scanned. Scan a smaller folder to continue.",
+    "Analysemetadaten erreichten das Speicherbudget von 1,5 GiB; übrige Einträge wurden nicht erfasst. Zum Fortfahren einen kleineren Ordner analysieren.",
+    "Les métadonnées ont atteint le budget de 1,5 GiB ; les éléments restants n’ont pas été analysés. Analysez un dossier plus petit.",
+    "Los metadatos alcanzaron el presupuesto de 1,5 GiB; no se analizaron las entradas restantes. Analiza una carpeta más pequeña."
   ],
   [
     "Reparse point excluded; target not followed",
@@ -966,52 +966,10 @@
     "Análisis MFT rápido no disponible: {0}. Se usa enumeración estándar; no se solicitaron privilegios adicionales."
   ],
   [
-    "NTFS MFT index + verified stream metadata",
-    "NTFS-MFT-Index + geprüfte Datenstrommetadaten",
-    "Index MFT NTFS + métadonnées de flux vérifiées",
-    "Índice MFT NTFS + metadatos de flujos verificados"
-  ],
-  [
-    "MFT index is a live hierarchy, not a snapshot. Hard-link names are reconciled explicitly. NTFS reserved metadata records are excluded; inaccessible and changing entries remain partial.",
-    "Der MFT-Index ist eine laufende Hierarchie, kein Abbild. Hardlink-Namen werden ausdrücklich abgeglichen. Reservierte NTFS-Metadatensätze sind ausgeschlossen; unzugängliche und veränderte Einträge bleiben unvollständig.",
-    "L’index MFT est une arborescence en direct, pas un instantané. Les noms des liens physiques sont rapprochés explicitement. Les métadonnées NTFS réservées sont exclues ; les entrées inaccessibles ou changeantes restent partielles.",
-    "El índice MFT es una jerarquía en vivo, no una instantánea. Los nombres de enlaces físicos se concilian explícitamente. Se excluyen los metadatos NTFS reservados; las entradas inaccesibles o cambiantes quedan parciales."
-  ],
-  [
     "Cycle in MFT directory references; branch excluded",
     "Zyklus in MFT-Ordnerverweisen; Zweig ausgeschlossen",
     "Cycle dans les références de dossiers MFT ; branche exclue",
     "Ciclo en referencias de carpetas MFT; rama excluida"
-  ],
-  [
-    "MFT hierarchy paths reached the 128 MiB memory budget; remaining entries were not scanned. Scan a smaller folder to continue.",
-    "MFT-Hierarchiepfade erreichten das Speicherbudget von 128 MiB; übrige Einträge nicht erfasst. Zum Fortfahren einen kleineren Ordner analysieren.",
-    "Les chemins MFT ont atteint le budget de 128 MiB ; les éléments restants n’ont pas été analysés. Analysez un dossier plus petit.",
-    "Las rutas MFT alcanzaron el presupuesto de 128 MiB; no se analizaron las entradas restantes. Analiza una carpeta más pequeña."
-  ],
-  [
-    "MFT index excluded {0} descendant records beneath reparse/cloud directories.",
-    "MFT-Index schloss {0} untergeordnete Datensätze in Analysepunkt-/Cloudordnern aus.",
-    "L’index MFT a exclu {0} enregistrements sous des dossiers cloud/points d’analyse.",
-    "El índice MFT excluyó {0} registros bajo carpetas de nube/puntos de reanálisis."
-  ],
-  [
-    "MFT hierarchy has {0} unreachable records beneath inaccessible or missing directory references; totals cover reachable entries only",
-    "MFT-Hierarchie enthält {0} unerreichbare Datensätze unter unzugänglichen oder fehlenden Ordnerverweisen; Summen enthalten nur erreichbare Einträge",
-    "L’arborescence MFT contient {0} enregistrements inaccessibles sous des références de dossiers absentes ou inaccessibles ; seuls les éléments accessibles sont comptés",
-    "La jerarquía MFT tiene {0} registros inaccesibles bajo referencias de carpetas ausentes o inaccesibles; los totales solo incluyen entradas accesibles"
-  ],
-  [
-    "Hard-link parent unavailable: {0}",
-    "Übergeordneter Hardlink-Ordner nicht verfügbar: {0}",
-    "Dossier parent du lien physique indisponible : {0}",
-    "Carpeta superior del enlace físico no disponible: {0}"
-  ],
-  [
-    "Additional hard-link names unavailable: {0}",
-    "Weitere Hardlink-Namen nicht verfügbar: {0}",
-    "Noms supplémentaires de liens physiques indisponibles : {0}",
-    "Nombres adicionales de enlaces físicos no disponibles: {0}"
   ],
   [
     "Hardware worker stopped unexpectedly",
@@ -1108,5 +1066,83 @@
     "Screenshot-Prozess konnte nicht gestartet werden: {0}",
     "Impossible de démarrer la capture : {0}",
     "No se pudo iniciar la captura: {0}"
+  ],
+  [
+    "NTFS master file table",
+    "NTFS-Masterdateitabelle",
+    "Table de fichiers maître NTFS",
+    "Tabla maestra de archivos NTFS"
+  ],
+  [
+    "Read from the NTFS master file table: names, folders and sizes come from file records, so no file was opened. Records caught mid-change were read again. NTFS reserved metadata records are excluded; restore points in System Volume Information are counted.",
+    "Aus der NTFS-Masterdateitabelle gelesen: Namen, Ordner und Größen stammen aus den Dateidatensätzen, keine Datei wurde geöffnet. Während einer Änderung erfasste Datensätze wurden erneut gelesen. Reservierte NTFS-Metadatensätze sind ausgeschlossen; Wiederherstellungspunkte in System Volume Information sind enthalten.",
+    "Lu depuis la table de fichiers maître NTFS : noms, dossiers et tailles proviennent des enregistrements, aucun fichier n’a été ouvert. Les enregistrements saisis en cours de modification ont été relus. Les enregistrements de métadonnées réservés de NTFS sont exclus ; les points de restauration de System Volume Information sont inclus.",
+    "Leído de la tabla maestra de archivos NTFS: nombres, carpetas y tamaños provienen de los registros, sin abrir ningún archivo. Los registros captados durante un cambio se volvieron a leer. Se excluyen los registros de metadatos reservados de NTFS; se incluyen los puntos de restauración de System Volume Information."
+  ],
+  [
+    "the scanned folder changed while the MFT was read",
+    "der analysierte Ordner änderte sich, während die MFT gelesen wurde",
+    "le dossier analysé a changé pendant la lecture de la MFT",
+    "la carpeta analizada cambió mientras se leía la MFT"
+  ],
+  [
+    "{0} MFT records were skipped because their folder changed during the read.",
+    "{0} MFT-Datensätze übersprungen, weil sich ihr Ordner während des Lesens änderte.",
+    "{0} enregistrements MFT ignorés, car leur dossier a changé pendant la lecture.",
+    "Se omitieron {0} registros MFT porque su carpeta cambió durante la lectura."
+  ],
+  [
+    "{0} MFT records changed on every read; their entries are missing",
+    "{0} MFT-Datensätze änderten sich bei jedem Lesen; ihre Einträge fehlen",
+    "{0} enregistrements MFT ont changé à chaque lecture ; leurs éléments manquent",
+    "{0} registros MFT cambiaron en cada lectura; faltan sus entradas"
+  ],
+  [
+    "the MFT is split across attribute-list records",
+    "die MFT ist über Attributlisten-Datensätze verteilt",
+    "la MFT est répartie sur des enregistrements de liste d’attributs",
+    "la MFT está repartida en registros de lista de atributos"
+  ],
+  [
+    "the MFT's data runs do not cover its records",
+    "die Datenbereiche der MFT decken ihre Datensätze nicht ab",
+    "les plages de données de la MFT ne couvrent pas ses enregistrements",
+    "los tramos de datos de la MFT no cubren sus registros"
+  ],
+  [
+    "Sizes come from folder listings, so no file is opened. Named data streams, such as download markers, are not included; an administrator scan of a whole drive includes them.",
+    "Die Größen stammen aus Ordnerlisten, daher wird keine Datei geöffnet. Benannte Datenströme wie Download-Markierungen sind nicht enthalten; eine Administratoranalyse eines ganzen Laufwerks berücksichtigt sie.",
+    "Les tailles proviennent des listes de dossiers : aucun fichier n’est ouvert. Les flux nommés, comme les marqueurs de téléchargement, ne sont pas inclus ; une analyse administrateur d’un lecteur entier les inclut.",
+    "Los tamaños provienen de los listados de carpetas, por lo que no se abre ningún archivo. Los flujos con nombre, como las marcas de descarga, no se incluyen; un análisis de administrador de una unidad completa sí los incluye."
+  ],
+  [
+    "Truncated directory entry",
+    "Ordnereintrag abgeschnitten",
+    "Entrée de dossier tronquée",
+    "Entrada de carpeta truncada"
+  ],
+  [
+    "Invalid directory entry offset",
+    "Ungültiger Ordnereintragsoffset",
+    "Décalage d’entrée de dossier invalide",
+    "Desplazamiento de entrada de carpeta no válido"
+  ],
+  [
+    "Invalid directory entry name",
+    "Ungültiger Ordnereintragsname",
+    "Nom d’entrée de dossier invalide",
+    "Nombre de entrada de carpeta no válido"
+  ],
+  [
+    "Invalid directory entry size",
+    "Ungültige Ordnereintragsgröße",
+    "Taille d’entrée de dossier invalide",
+    "Tamaño de entrada de carpeta no válido"
+  ],
+  [
+    "{0} is drive-relative; include a backslash after the drive letter, for example {1}\\",
+    "{0} ist laufwerksrelativ; nach dem Laufwerksbuchstaben fehlt ein Backslash, zum Beispiel {1}\\",
+    "{0} est relatif au lecteur ; ajoutez une barre oblique inverse après la lettre de lecteur, par exemple {1}\\",
+    "{0} es relativa a la unidad; añada una barra invertida tras la letra de unidad, por ejemplo {1}\\"
   ]
 ]

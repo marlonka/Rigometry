@@ -17,6 +17,7 @@ The Rust standard library is outside Cargo.lock; its [original notices](toolchai
 - Include the application LICENSE, this inventory, and bundled third-party license texts with the portable package.
 - Default egui fonts are separate assets: Hack (MIT/Bitstream Vera terms), Noto Emoji (OFL), Ubuntu (Ubuntu Font Licence), and emoji-icon-font (MIT). Preserve the font notices even when system fonts override the defaults.
 - ICU and Unicode data use Unicode-3.0 notices; unicode-ident also includes Unicode terms alongside its Rust-code license.
+- `src/search.rs` adapts name scoring, typo tolerance and query syntax from FSearch (MIT, Noah Dunnagan). It is source adaptation, not a Cargo dependency; its license text is included in third-party-licenses.txt.
 - Cargo metadata licenses do not cover separately loaded installed NVIDIA/AMD/Intel drivers. No vendor driver binary is bundled. The NVML ABI notice is included in third-party-licenses.txt separately from Rust package notices.
 - Original license/notice texts from cached crates and exact upstream commits are collected in third-party-licenses.txt. Identical text is included once with all associated packages. Upstream supplements cover workspace-published crates whose crates.io archive omits root license files; font and generated-binding notices are retained.
 

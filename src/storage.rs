@@ -3,14 +3,15 @@
 //!
 //! Logical bytes count every directory entry (including hard-link aliases).
 //! Allocated bytes count each file identity once within the selected scope.
-//! Windows data streams are included; filesystem bookkeeping is not.
+//! Standard scans count each file's main data stream; the MFT reader also
+//! counts named streams. Filesystem bookkeeping is never included.
 
 use crossbeam_channel::{Receiver, Sender, bounded};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashSet,
     fs::{self, File},
-    io::{BufWriter, Write},
+    io::{self, BufWriter, Write},
     path::{Path, PathBuf},
     sync::{
         Arc,
@@ -22,15 +23,17 @@ use std::{
 const QUEUE_CAPACITY: usize = 9;
 const BATCH_SIZE: usize = 256;
 const MAX_DIAGNOSTICS: usize = 24;
-const MAX_RETAINED_BYTES: usize = 512 * 1024 * 1024;
+const MAX_RETAINED_BYTES: usize = 1536 * 1024 * 1024;
 const MAX_NOTE_BYTES: usize = 4096;
 const NOTE_TRUNCATED: &str = "… [additional details omitted]";
 
+/// One scanned entry. Paths are not stored: at millions of entries they would
+/// be the largest part of the tree. `node_path` rebuilds them from names; the
+/// root's name is its full path.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ScanNode {
     pub id: usize,
     pub parent: Option<usize>,
-    pub path: PathBuf,
     pub name: String,
     pub is_dir: bool,
     pub logical: u64,
@@ -56,6 +59,25 @@ pub struct ScanSummary {
     pub incomplete_nodes: Vec<usize>,
     #[serde(default)]
     pub stopped_early: bool,
+    /// Errors that were Windows refusing access, typically protected system
+    /// folders, which an administrator scan can read. Included in `errors`.
+    #[serde(default)]
+    pub denied: u64,
+    /// Errors from files Windows holds open exclusively (`pagefile.sys`); their
+    /// sizes remain lower bounds even for administrators. Included in `errors`.
+    #[serde(default)]
+    pub locked: u64,
+}
+
+/// Full path of a node, joined from its ancestors' names.
+pub fn node_path(nodes: &[ScanNode], id: usize) -> PathBuf {
+    let mut chain = Vec::new();
+    let mut next = nodes.get(id);
+    while let Some(node) = next {
+        chain.push(node.name.as_str());
+        next = node.parent.and_then(|p| nodes.get(p));
+    }
+    chain.into_iter().rev().collect()
 }
 
 #[derive(Debug)]
@@ -106,7 +128,25 @@ struct EntryInfo {
     links: u64,
     note: String,
     errors: u64,
+    refusal: Option<Refusal>,
     skip: Option<Skip>,
+}
+
+/// Why Windows refused to open an entry, when that is the whole error.
+#[derive(Clone, Copy, PartialEq, Debug)]
+enum Refusal {
+    Denied,
+    Locked,
+}
+
+impl Refusal {
+    fn of_os_error(code: Option<i32>) -> Option<Self> {
+        match code {
+            Some(5) => Some(Self::Denied),  // ERROR_ACCESS_DENIED
+            Some(32) => Some(Self::Locked), // ERROR_SHARING_VIOLATION
+            _ => None,
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -133,10 +173,10 @@ fn scan(path: PathBuf, sender: Sender<ScanEvent>, cancel: Arc<AtomicBool>) {
         }
     };
     let summary = ScanSummary {
-        method: "Filesystem enumeration + file metadata".into(),
+        method: "Folder listings".into(),
         notes: vec![
-            "Logical bytes include named data streams and each hard-link path; allocated bytes count each file identity once, attributed to its first scanned path.".into(),
-            "Directory data streams are included. Directory indexes, MFT records, security metadata, filesystem journals, snapshots and other volume overhead are excluded. Scanned totals are not volume used space.".into(),
+            "Logical bytes count each hard-link path; allocated bytes count each file identity once, attributed to the first path listed.".into(),
+            "Directory indexes, MFT records, security metadata, filesystem journals and other volume overhead are excluded. Scanned totals are not volume used space.".into(),
             "Live scan, not a filesystem snapshot: files can change or disappear during enumeration. Reparse points and cloud placeholders are excluded without reading file contents.".into(),
         ],
         ..Default::default()
@@ -159,13 +199,22 @@ fn scan(path: PathBuf, sender: Sender<ScanEvent>, cancel: Arc<AtomicBool>) {
         return;
     }
 
-    let mut directories = Vec::new();
-    if let Some(visited) = worker.visit(path.clone(), None)
+    if let Some(visited) = worker.visit(&path, None)
         && visited.traverse
     {
-        directories.push((visited.id, path));
+        #[cfg(windows)]
+        listing::walk(&mut worker, visited.id, path, visited.refused);
+        #[cfg(not(windows))]
+        walk_portable(&mut worker, visited.id, path, visited.refused);
     }
-    while let Some((parent, directory)) = directories.pop() {
+    finish_scan(worker, started);
+}
+
+/// One entry at a time, through `visit`. Windows lists whole folders instead.
+#[cfg(not(windows))]
+fn walk_portable(worker: &mut Worker, root: usize, path: PathBuf, refused: bool) {
+    let mut directories = vec![(root, path, refused)];
+    while let Some((parent, directory, refused)) = directories.pop() {
         if worker.cancelled() {
             break;
         }
@@ -181,7 +230,7 @@ fn scan(path: PathBuf, sender: Sender<ScanEvent>, cancel: Arc<AtomicBool>) {
                 continue;
             }
             Err(error) => {
-                worker.record_node_error(parent, &directory, &error.to_string());
+                worker.record_io_error(parent, &directory, &error, true);
                 continue;
             }
             _ => {}
@@ -189,7 +238,8 @@ fn scan(path: PathBuf, sender: Sender<ScanEvent>, cancel: Arc<AtomicBool>) {
         let entries = match fs::read_dir(&directory) {
             Ok(entries) => entries,
             Err(error) => {
-                worker.record_node_error(parent, &directory, &error.to_string());
+                // A folder Windows already refused to open counts as one refusal.
+                worker.record_io_error(parent, &directory, &error, !refused);
                 continue;
             }
         };
@@ -200,20 +250,19 @@ fn scan(path: PathBuf, sender: Sender<ScanEvent>, cancel: Arc<AtomicBool>) {
             match entry {
                 Ok(entry) => {
                     let path = entry.path();
-                    if let Some(visited) = worker.visit(path.clone(), Some(parent))
+                    if let Some(visited) = worker.visit(&path, Some(parent))
                         && visited.traverse
                     {
-                        directories.push((visited.id, path));
+                        directories.push((visited.id, path, visited.refused));
                     }
                 }
-                Err(error) => worker.record_node_error(parent, &directory, &error.to_string()),
+                Err(error) => worker.record_io_error(parent, &directory, &error, true),
             }
             if !worker.flush(false) {
                 break;
             }
         }
     }
-    finish_scan(worker, started);
 }
 
 fn finish_scan(mut worker: Worker, started: Instant) {
@@ -249,10 +298,16 @@ struct Worker {
 struct Visited {
     id: usize,
     traverse: bool,
-    #[cfg(windows)]
-    links: u64,
-    #[cfg(windows)]
-    excluded: bool,
+    /// Windows refused to open the entry; already counted in the summary.
+    refused: bool,
+}
+
+/// Memory one more entry keeps alive in the UI's tree: its slot (the vector
+/// grows by doubling, so half a spare slot on average), its name and note,
+/// its index in the parent's child list, allocator headers and the hard-link
+/// identity the worker remembers.
+fn retained_entry_bytes(name: &str, note: &str) -> usize {
+    std::mem::size_of::<ScanNode>() * 3 / 2 + name.len() + note.len() + 64
 }
 
 impl Worker {
@@ -279,33 +334,50 @@ impl Worker {
         self.record_error(path, message);
     }
 
-    fn visit(&mut self, path: PathBuf, parent: Option<usize>) -> Option<Visited> {
+    /// Records a filesystem error on node `id`. With `count_refusal`, access
+    /// denied and sharing violations also count as refusals.
+    fn record_io_error(&mut self, id: usize, path: &Path, error: &io::Error, count_refusal: bool) {
+        if count_refusal {
+            self.count_refusal(Refusal::of_os_error(error.raw_os_error()));
+        }
+        self.record_node_error(id, path, &error.to_string());
+    }
+
+    fn count_refusal(&mut self, refusal: Option<Refusal>) {
+        match refusal {
+            Some(Refusal::Denied) => self.summary.denied += 1,
+            Some(Refusal::Locked) => self.summary.locked += 1,
+            None => {}
+        }
+    }
+
+    /// Ends the scan at a memory budget. Reported first and even when the
+    /// per-path diagnostics are full: it is why every later folder is missing.
+    fn stop_at_budget(&mut self, path: &Path, message: &str) {
+        self.summary.errors += 1;
+        if self.summary.incomplete_nodes.first() != Some(&0) {
+            self.summary.incomplete_nodes.insert(0, 0);
+        }
+        self.summary
+            .notes
+            .insert(0, format!("{}: {message}", path.display()));
+        self.stopped = true;
+    }
+
+    fn visit(&mut self, path: &Path, parent: Option<usize>) -> Option<Visited> {
         if self.cancelled() {
             return None;
         }
-        let id = self.next_id;
-        self.next_id += 1;
-        let name = path
-            .file_name()
-            .unwrap_or_else(|| path.as_os_str())
-            .to_string_lossy()
-            .into_owned();
-        // Cover tree/vector capacity, queued directory paths, child IDs and
-        // hard-link identities, not only names. Bound a hostile or enormous
-        // tree before retaining enough metadata to exhaust the desktop process.
-        let retained = std::mem::size_of::<ScanNode>() * 2
-            + path.capacity().saturating_mul(2)
-            + name.capacity()
-            + 96;
-        if self.retained_bytes.saturating_add(retained) > MAX_RETAINED_BYTES {
-            self.record_error(&path, "Scan metadata reached the 512 MiB memory budget; remaining entries were not scanned. Scan a smaller folder to continue.");
-            self.stopped = true;
-            return None;
+        // The root keeps its full path; every other path is rebuilt from it.
+        let name = match parent {
+            None => path.as_os_str(),
+            Some(_) => path.file_name().unwrap_or(path.as_os_str()),
         }
+        .to_string_lossy()
+        .into_owned();
         let mut node = ScanNode {
-            id,
+            id: self.next_id,
             parent,
-            path,
             name,
             is_dir: false,
             logical: 0,
@@ -316,11 +388,8 @@ impl Worker {
             incomplete: false,
         };
         let mut traverse = false;
-        #[cfg(windows)]
-        let mut links = 0;
-        #[cfg(windows)]
-        let mut excluded = false;
-        match fs::symlink_metadata(&node.path) {
+        let mut refused = false;
+        match fs::symlink_metadata(path) {
             Ok(metadata) => {
                 node.is_dir = metadata.is_dir();
                 let mut info = match skip_metadata(&metadata) {
@@ -328,30 +397,11 @@ impl Worker {
                         skip: Some(skip),
                         ..Default::default()
                     },
-                    None => read_entry(&node.path, &metadata),
+                    None => read_entry(path, &metadata),
                 };
                 if let Some(skip) = info.skip {
-                    node.incomplete = true;
-                    #[cfg(windows)]
-                    {
-                        excluded = true;
-                    }
-                    match skip {
-                        Skip::Reparse => {
-                            self.summary.skipped_reparse += 1;
-                            node.note = "Reparse point excluded; target not followed".into();
-                        }
-                        Skip::Cloud => {
-                            self.summary.skipped_cloud += 1;
-                            node.note =
-                                "Cloud/offline placeholder excluded; no hydration requested".into();
-                        }
-                    }
+                    self.mark_skipped(&mut node, skip);
                 } else {
-                    #[cfg(windows)]
-                    {
-                        links = info.links;
-                    }
                     traverse = node.is_dir;
                     node.logical = info.logical;
                     node.files = u64::from(!node.is_dir);
@@ -369,10 +419,15 @@ impl Worker {
                     node.note = info.note;
                     node.incomplete = info.errors > 0;
                     self.summary.errors += info.errors;
+                    refused = info.refusal.is_some();
+                    self.count_refusal(info.refusal);
                 }
             }
             Err(error) => {
-                self.record_error(&node.path, &error.to_string());
+                let refusal = Refusal::of_os_error(error.raw_os_error());
+                refused = refusal.is_some();
+                self.count_refusal(refusal);
+                self.record_error(path, &error.to_string());
                 node.note = format!("Metadata unavailable: {error}");
                 node.incomplete = true;
             }
@@ -380,22 +435,44 @@ impl Worker {
         if node.note.len() > MAX_NOTE_BYTES {
             truncate_note(&mut node.note);
         }
-        let retained = retained.saturating_add(node.note.capacity());
-        if self.retained_bytes.saturating_add(retained) > MAX_RETAINED_BYTES {
-            self.record_error(&node.path, "Scan metadata reached the 512 MiB memory budget; remaining entries were not scanned. Scan a smaller folder to continue.");
-            self.stopped = true;
-            return None;
-        }
-        self.retained_bytes += retained;
-        self.batch.push(node);
+        // Queued folders also hold their path until they are enumerated.
+        let queued = if traverse { path.as_os_str().len() } else { 0 };
+        let id = self.push(node, queued, path)?;
         Some(Visited {
             id,
             traverse,
-            #[cfg(windows)]
-            links,
-            #[cfg(windows)]
-            excluded,
+            refused,
         })
+    }
+
+    fn mark_skipped(&mut self, node: &mut ScanNode, skip: Skip) {
+        node.incomplete = true;
+        match skip {
+            Skip::Reparse => {
+                self.summary.skipped_reparse += 1;
+                node.note = "Reparse point excluded; target not followed".into();
+            }
+            Skip::Cloud => {
+                self.summary.skipped_cloud += 1;
+                node.note = "Cloud/offline placeholder excluded; no hydration requested".into();
+            }
+        }
+    }
+
+    /// Queues a finished node, whose `id` must be `next_id`, within the
+    /// memory budget. `queued` is memory held until a folder is enumerated;
+    /// `at` names where a scan that runs out of budget stopped.
+    fn push(&mut self, node: ScanNode, queued: usize, at: &Path) -> Option<usize> {
+        let retained = retained_entry_bytes(&node.name, &node.note) + queued;
+        if self.retained_bytes.saturating_add(retained) > MAX_RETAINED_BYTES {
+            self.stop_at_budget(at, "Scan metadata reached the 1.5 GiB memory budget; remaining entries were not scanned. Scan a smaller folder to continue.");
+            return None;
+        }
+        self.retained_bytes += retained;
+        let id = node.id;
+        self.next_id += 1;
+        self.batch.push(node);
+        Some(id)
     }
 
     fn flush(&mut self, force: bool) -> bool {
@@ -489,6 +566,42 @@ fn read_entry(_path: &Path, metadata: &fs::Metadata) -> EntryInfo {
     }
 }
 
+/// Nodes as exported: the stored fields plus each node's full path, built
+/// while writing so a large scan never holds every path at once.
+struct ExportNodes<'a>(&'a [ScanNode]);
+
+impl Serialize for ExportNodes<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct Node<'a> {
+            id: usize,
+            parent: Option<usize>,
+            path: String,
+            name: &'a str,
+            is_dir: bool,
+            logical: u64,
+            allocated: u64,
+            files: u64,
+            children: &'a [usize],
+            note: &'a str,
+            incomplete: bool,
+        }
+        serializer.collect_seq(self.0.iter().map(|n| Node {
+            id: n.id,
+            parent: n.parent,
+            path: node_path(self.0, n.id).to_string_lossy().into_owned(),
+            name: &n.name,
+            is_dir: n.is_dir,
+            logical: n.logical,
+            allocated: n.allocated,
+            files: n.files,
+            children: &n.children,
+            note: &n.note,
+            incomplete: n.incomplete,
+        }))
+    }
+}
+
 pub fn export_json(
     path: &Path,
     nodes: &[ScanNode],
@@ -500,14 +613,14 @@ pub fn export_json(
         sizes: &'static str,
         status: &'static str,
         summary: Option<&'a ScanSummary>,
-        nodes: &'a [ScanNode],
+        nodes: ExportNodes<'a>,
     }
     write_new_output_with(path, |file| {
         let mut writer = BufWriter::new(file);
         serde_json::to_writer_pretty(&mut writer, &Export {
         schema_version: 1,
-        sizes: "Bytes. Directory values are subtree totals as displayed. Incomplete entries contain known lower-bound sums; missing allocation contributes no bytes, not a zero measurement. Logical counts hard-link paths; allocated counts each file identity once. Named data streams included; filesystem overhead excluded.",
-        status: export_status(summary), summary, nodes,
+        sizes: "Bytes. Directory values are subtree totals as displayed. Incomplete entries contain known lower-bound sums; missing allocation contributes no bytes, not a zero measurement. Logical counts hard-link paths; allocated counts each file identity once. Named data streams are included only when summary.method is the NTFS master file table; filesystem overhead excluded.",
+        status: export_status(summary), summary, nodes: ExportNodes(nodes),
         }).map_err(|e| e.to_string())?;
         writer.flush().map_err(|e| e.to_string())
     })
@@ -540,7 +653,7 @@ pub fn export_csv(
                     node.id.to_string(),
                     node.parent.map(|v| v.to_string()).unwrap_or_default(),
                     if node.is_dir { "directory" } else { "file" }.into(),
-                    csv_text(&node.path.to_string_lossy()),
+                    csv_text(&node_path(nodes, node.id).to_string_lossy()),
                     node.logical.to_string(),
                     node.allocated.to_string(),
                     node.files.to_string(),
@@ -610,13 +723,53 @@ fn write_new_output_with(
     Ok(())
 }
 
+/// A typed or pasted scan path without surrounding whitespace or the double
+/// quotes Explorer's "Copy as path" adds.
+pub(crate) fn scan_input_path(input: &str) -> &str {
+    let trimmed = input.trim();
+    trimmed
+        .strip_prefix('"')
+        .and_then(|rest| rest.strip_suffix('"'))
+        .map_or(trimmed, str::trim)
+}
+
 fn checked_path(path: &Path) -> Result<PathBuf, String> {
     #[cfg(windows)]
     native::validate_path(path)?;
+    #[cfg(windows)]
+    let path = &drive_root_or_absolute(path)?;
     let path = std::path::absolute(path).map_err(|e| e.to_string())?;
     #[cfg(windows)]
     native::validate_path(&path)?;
     Ok(path)
+}
+
+/// Windows resolves `C:` and `C:folder` against a hidden per-drive current
+/// directory, not the drive root. A bare drive letter means its root; a
+/// drive-relative path is rejected rather than scanning an unrelated folder.
+#[cfg(windows)]
+fn drive_root_or_absolute(path: &Path) -> Result<PathBuf, String> {
+    use std::path::{Component, Prefix};
+    let Some(Component::Prefix(prefix)) = path.components().next() else {
+        return Ok(path.into());
+    };
+    if !matches!(prefix.kind(), Prefix::Disk(_)) {
+        return Ok(path.into());
+    }
+    // Inspect the raw text: `components()` drops a `.` after the prefix.
+    let drive = prefix.as_os_str().to_string_lossy();
+    let text = path.to_string_lossy();
+    let rest = &text[drive.len()..];
+    if rest.is_empty() {
+        Ok(PathBuf::from(format!("{drive}\\")))
+    } else if rest.starts_with(['\\', '/']) {
+        Ok(path.into())
+    } else {
+        Err(format!(
+            "{} is drive-relative; include a backslash after the drive letter, for example {drive}\\",
+            path.display()
+        ))
+    }
 }
 
 /// Check from the root down so a selected path beneath an existing junction or
@@ -669,6 +822,8 @@ fn csv_text(text: &str) -> String {
     }
 }
 
+#[cfg(windows)]
+mod listing;
 #[cfg(windows)]
 mod native;
 

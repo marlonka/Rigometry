@@ -1,7 +1,7 @@
 //! The Windows boundary reads metadata through handles opened with no data
 //! access and no recall. Every handle is owned and closed on every exit path.
 
-use super::{EntryInfo, FileIdentity, Skip, append_note};
+use super::{EntryInfo, FileIdentity, Refusal, Skip, append_note};
 use std::{fs, mem::size_of, os::windows::ffi::OsStrExt, path::Path};
 use windows::{
     Win32::{
@@ -123,6 +123,21 @@ pub(super) fn metadata_handle(path: &Path) -> windows::core::Result<OwnedHandle>
     }
 }
 
+/// The Win32 error inside an HRESULT_FROM_WIN32 value (facility 7).
+pub(super) fn win32_code(error: &windows::core::Error) -> Option<u32> {
+    let code = error.code().0 as u32;
+    (code >> 16 == 0x8007).then_some(code & 0xffff)
+}
+
+/// A Windows error as `std::io` reports it: Win32 errors keep their code,
+/// so access-denied and sharing violations are recognized as refusals.
+pub(super) fn io_error(error: windows::core::Error) -> std::io::Error {
+    match win32_code(&error) {
+        Some(code) => std::io::Error::from_raw_os_error(code as i32),
+        None => error.into(),
+    }
+}
+
 pub(super) fn skip_attributes(attributes: u32) -> Option<Skip> {
     let cloud = FILE_ATTRIBUTE_OFFLINE.0
         | FILE_ATTRIBUTE_RECALL_ON_OPEN.0
@@ -136,7 +151,7 @@ pub(super) fn skip_attributes(attributes: u32) -> Option<Skip> {
     }
 }
 
-fn query<T: Default>(
+pub(super) fn query<T: Default>(
     handle: HANDLE,
     class: windows::Win32::Storage::FileSystem::FILE_INFO_BY_HANDLE_CLASS,
 ) -> windows::core::Result<T> {
@@ -161,7 +176,9 @@ pub(super) fn read_entry(path: &Path, metadata: &fs::Metadata) -> EntryInfo {
         Ok(handle) => handle,
         Err(error) => {
             result.errors = 1;
+            result.refusal = Refusal::of_os_error(win32_code(&error).map(|code| code as i32));
             result.note = format!("Allocation and stream metadata unavailable: {error}");
+            result.allocated = locked_allocation_lower_bound(metadata);
             return result;
         }
     };
@@ -348,6 +365,25 @@ pub(super) fn read_entry(path: &Path, metadata: &fs::Metadata) -> EntryInfo {
         append_note(&mut result.note, "NTFS compressed");
     }
     result
+}
+
+/// Files Windows holds open exclusively (hiberfil.sys, pagefile.sys) refuse
+/// even a query-only handle, but the directory listing still reports their
+/// length. Unless sparse or compressed, a file occupies whole clusters for
+/// all of its bytes, so its length is a lower bound for its allocation.
+/// Small files can live inside their MFT record with no allocation at all.
+pub(super) fn locked_allocation_lower_bound(metadata: &fs::Metadata) -> u64 {
+    use std::os::windows::fs::MetadataExt;
+    const MFT_RESIDENT_LIMIT: u64 = 1024;
+    let shrinkable = FILE_ATTRIBUTE_SPARSE_FILE.0 | FILE_ATTRIBUTE_COMPRESSED.0;
+    if metadata.is_dir()
+        || metadata.file_attributes() & shrinkable != 0
+        || metadata.len() <= MFT_RESIDENT_LIMIT
+    {
+        0
+    } else {
+        metadata.len()
+    }
 }
 
 #[derive(Debug)]

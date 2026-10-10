@@ -83,11 +83,19 @@ pub struct State {
     pub selected: usize,
     pub expanded: HashSet<usize>,
     pub filter: String,
+    /// The filter the current `visible` rows were built from.
+    pub visible_filter: String,
+    pub search_error: Option<String>,
+    /// The sort to restore when a search that switched to relevance ends.
+    sort_before_search: Option<(Sort, bool)>,
+    name_masks: crate::search::NameMasks,
     pub largest: bool,
     pub sort: Sort,
     pub descending: bool,
     pub visible: Vec<(usize, usize)>,
     pub dirty: bool,
+    /// A user action is waiting for the rows; skip the scan-time throttle.
+    pub urgent: bool,
     pub last_index: Instant,
     pub map_ids: Vec<usize>,
     pub map_revision: u64,
@@ -98,12 +106,15 @@ pub struct State {
     receiver: Receiver<HardwareEvent>,
     stop: Arc<AtomicBool>,
 }
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Sort {
     Name,
-    Logical,
+    /// Bytes on disk: what deleting an entry frees. Logical bytes are shown
+    /// as detail only; for most files the two are identical.
     Allocated,
     Files,
+    /// Search score, then logical size. Only active while searching.
+    Relevance,
 }
 
 impl State {
@@ -168,11 +179,16 @@ impl State {
             selected: 0,
             expanded: HashSet::new(),
             filter: String::new(),
+            visible_filter: String::new(),
+            search_error: None,
+            sort_before_search: None,
+            name_masks: Default::default(),
             largest: false,
-            sort: Sort::Logical,
+            sort: Sort::Allocated,
             descending: true,
             visible: vec![],
             dirty: false,
+            urgent: false,
             last_index: Instant::now(),
             map_ids: vec![],
             map_revision: 0,
@@ -276,7 +292,9 @@ impl State {
             }
         }
         if self.dirty
-            && (self.scan.is_none() || self.last_index.elapsed() > Duration::from_millis(400))
+            && (self.scan.is_none()
+                || self.urgent
+                || self.last_index.elapsed() > Duration::from_millis(400))
         {
             self.rebuild_visible();
         }
@@ -312,7 +330,11 @@ impl State {
         }
     }
     pub fn start_scan(&mut self) {
-        if self.settings.path.trim().is_empty() {
+        let path = storage::scan_input_path(&self.settings.path);
+        if path.len() != self.settings.path.len() {
+            self.settings.path = path.to_owned();
+        }
+        if self.settings.path.is_empty() {
             self.notice = Some("Enter a folder or drive path".into());
             return;
         }
@@ -419,12 +441,35 @@ impl State {
         self.scope = id;
         self.selected = id;
         self.expanded.insert(id);
+        self.refresh_now();
+    }
+    /// Searching ranks by relevance until a column is chosen; clearing the
+    /// search restores the sort that was active before it.
+    pub fn filter_changed(&mut self) {
+        let searching = !self.filter.trim().is_empty();
+        if searching && self.sort_before_search.is_none() {
+            self.sort_before_search = Some((self.sort, self.descending));
+            self.sort = Sort::Relevance;
+            self.descending = true;
+        } else if !searching
+            && let Some((sort, descending)) = self.sort_before_search.take()
+            && self.sort == Sort::Relevance
+        {
+            (self.sort, self.descending) = (sort, descending);
+        }
+        self.refresh_now();
+    }
+    /// Rebuild rows on the next frame, even while a scan is streaming in.
+    pub fn refresh_now(&mut self) {
         self.dirty = true;
+        self.urgent = true;
     }
     pub fn rebuild_visible(&mut self) {
         self.visible.clear();
         self.last_index = Instant::now();
         self.dirty = false;
+        self.urgent = false;
+        self.visible_filter.clone_from(&self.filter);
         if self.nodes.is_empty() {
             self.map_ids.clear();
             self.map_revision = self.map_revision.wrapping_add(1);
@@ -434,19 +479,27 @@ impl State {
             .children
             .iter()
             .copied()
-            .filter(|id| self.nodes[*id].logical > 0)
+            .filter(|id| self.nodes[*id].allocated > 0)
             .collect();
         self.map_ids
-            .sort_unstable_by_key(|id| std::cmp::Reverse(self.nodes[*id].logical));
+            .sort_unstable_by_key(|id| std::cmp::Reverse(self.nodes[*id].allocated));
         self.map_revision += 1;
-        let filter = self.filter.to_lowercase();
+        let query = match crate::search::Query::parse(&self.filter) {
+            Ok(query) => {
+                self.search_error = None;
+                query
+            }
+            Err(error) => {
+                self.search_error = Some(error);
+                return;
+            }
+        };
         let compare = |a: &usize, b: &usize| {
             let a = &self.nodes[*a];
             let b = &self.nodes[*b];
             let order = match self.sort {
                 Sort::Name => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
-                Sort::Logical => a.logical.cmp(&b.logical),
-                Sort::Allocated => a.allocated.cmp(&b.allocated),
+                Sort::Allocated | Sort::Relevance => a.allocated.cmp(&b.allocated),
                 Sort::Files => a.files.cmp(&b.files),
             };
             let order = if self.descending {
@@ -456,31 +509,25 @@ impl State {
             };
             order.then_with(|| a.name.cmp(&b.name))
         };
-        if self.largest || !filter.is_empty() {
-            let mut ids: Vec<usize> = self
-                .nodes
-                .iter()
-                .filter(|n| {
-                    if n.id == self.scope
-                        || (self.largest && n.is_dir)
-                        || (!filter.is_empty()
-                            && !n.path.to_string_lossy().to_lowercase().contains(&filter))
-                    {
-                        return false;
-                    }
-                    let mut parent = n.parent;
-                    while let Some(p) = parent {
-                        if p == self.scope {
-                            return true;
-                        }
-                        parent = self.nodes[p].parent;
-                    }
-                    false
-                })
-                .map(|n| n.id)
-                .collect();
-            ids.sort_by(compare);
-            self.visible.extend(ids.into_iter().map(|id| (id, 0)));
+        if self.largest || !query.is_empty() {
+            let masks = self.name_masks.update(&self.nodes, self.scan_generation);
+            let mut hits = query.search(&self.nodes, masks, self.scope);
+            if self.largest {
+                hits.retain(|hit| !self.nodes[hit.id].is_dir);
+            }
+            if self.sort == Sort::Relevance {
+                // Ties go by name, not size: sizes grow while a scan runs, and
+                // rows must not reshuffle under the pointer.
+                hits.sort_by(|a, b| {
+                    b.score.cmp(&a.score).then_with(|| {
+                        let (a, b) = (&self.nodes[a.id], &self.nodes[b.id]);
+                        a.name.to_lowercase().cmp(&b.name.to_lowercase())
+                    })
+                });
+            } else {
+                hits.sort_by(|a, b| compare(&a.id, &b.id));
+            }
+            self.visible.extend(hits.into_iter().map(|hit| (hit.id, 0)));
         } else {
             let mut roots = self.nodes[self.scope].children.clone();
             roots.sort_by(compare);
@@ -582,7 +629,6 @@ mod tests {
         state.nodes = Arc::new(vec![ScanNode {
             id: 0,
             parent: None,
-            path: PathBuf::from("fixture"),
             name: "fixture".into(),
             is_dir: true,
             logical: 123,
@@ -656,7 +702,6 @@ mod tests {
         let node = |id, parent, dir, logical| ScanNode {
             id,
             parent,
-            path: PathBuf::from(id.to_string()),
             name: id.to_string(),
             is_dir: dir,
             logical,
@@ -685,7 +730,6 @@ mod tests {
         let node = |id, logical, allocated, files| ScanNode {
             id,
             parent: (id != 0).then_some(0),
-            path: PathBuf::from(id.to_string()),
             name: id.to_string(),
             is_dir: id == 0,
             logical,
@@ -753,7 +797,6 @@ mod tests {
             logical,
             allocated: logical,
             files: if is_dir { 0 } else { 1 },
-            path: PathBuf::from(id.to_string()),
             name: id.to_string(),
             children: vec![],
             note: String::new(),

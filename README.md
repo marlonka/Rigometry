@@ -12,16 +12,29 @@ Rigometry is a personal hobby project (Privatprojekt) by Marlon Kaulich, availab
 
 ![Hardware overview in the dark theme](docs/screenshots/overview.png)
 
+## Speed
+
+Ryzen 7 9800X3D, Lexar NM790 4 TB NVMe, `C:\` with 3.2 million files and folders (1.66 TiB on disk).
+
+| | |
+| --- | --- |
+| Scan the whole drive, as administrator | **2.8–3.6 s** |
+| Scan the same drive, standard account | **9–12 s** |
+| Search all 3.2 million entries while typing | p50 22–121 ms |
+| Memory for 3 million entries | about 1 GB |
+
+As administrator, Rigometry reads the NTFS master file table directly. Without administrator rights, it reads whole folder listings on several threads; that is faster than `robocopy` and used to take 8 minutes. Neither opens a file. [Method, accuracy, comparison with robocopy and how to measure it yourself](docs/benchmarks.md)
+
 ## What you can do
 
 - **Watch live activity:** CPU and memory utilization, per-thread CPU activity, GPU utilization and available temperatures, with a 120-second history.
 - **Inspect hardware:** processor and cache details, RAM modules, motherboard, BIOS and graphics adapters.
-- **Find large files and folders:** browse a sortable hierarchy, filter results, inspect a size map and export CSV or JSON.
-- **Check storage accounting:** logical and allocated bytes, hard links, named streams, exclusions and partial results.
+- **Find large files and folders:** scan a whole drive in seconds, with or without administrator rights, browse a sortable hierarchy and size map, search millions of entries with typo-tolerant ranking and `ext:`/`size:` filters, show any entry in Explorer and export CSV or JSON.
+- **Check storage accounting:** size on disk and file size, hard links, named streams, exclusions and partial results.
 - **Use the interface or command line:** dark/light themes, adjustable text size, reduced motion, hardware reports and automated scans.
 - **Choose your language:** English, Deutsch, Français or Español. The app follows the Windows display language by default; change it in Settings without restarting.
 
-Hardware queries and scans are read-only. No account, telemetry upload, bundled driver or administrator prompt. Settings are saved locally; reports and exports are created when requested.
+Hardware queries and scans are read-only. No account, telemetry upload or bundled driver; administrator rights are requested only when you choose **Scan as administrator**. Settings are saved locally; reports and exports are created when requested.
 
 <details>
 <summary>More screenshots</summary>
@@ -64,6 +77,7 @@ cargo build --release --locked
 - **GiB and MiB are binary units:** 1 GiB = 1,073,741,824 bytes. Exports retain byte counts. [Units and accounting](docs/usage.md#units-and-accounting)
 - **Unavailable is different from zero.** Missing sensors, driver failures and denied permissions remain explicit.
 - **A scan is not total drive usage.** Filesystem bookkeeping, reparse points and cloud placeholders are excluded. Inaccessible or interrupted results remain partial.
+- **Some folders need administrator rights.** Without them, Windows hides protected system folders and keeps a few files locked; **Scan as administrator** includes them.
 
 ## Development and support
 
