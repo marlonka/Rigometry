@@ -45,6 +45,13 @@ jobs:
         run: cargo test --all-targets --locked
       - name: Build and verify release outputs
         run: ./scripts/verify-windows.ps1 -SkipTests
+      - name: Keep executable for compatibility jobs
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: rigometry-exe
+          path: target/release/rigometry.exe
+          if-no-files-found: error
+          retention-days: 3
       - name: Package and verify every checksum
         run: |
           $package = & ./scripts/package.ps1 -PackageName Rigometry-ci
@@ -59,6 +66,99 @@ jobs:
             dist/*.zip.sha256
           if-no-files-found: error
           retention-days: 14
+
+  cpu-emulation:
+    # Intel SDE emulates each CPU's instruction set and CPUID, and stops on any instruction
+    # the chip lacks. Windows APIs, WMI and SMBIOS still describe the runner itself.
+    name: CPU emulation (${{ matrix.chip }})
+    needs: windows
+    runs-on: windows-2025
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - chip: nhm # Nehalem: the oldest instruction set Windows 11 24H2 runs on, no AVX
+            require: SSE4.2
+            forbid: AVX AVX2 AVX-512F
+          - chip: adl # Alder Lake: hybrid P/E cores, AVX2
+            require: AVX2
+            forbid: AVX-512F
+          - chip: arl # Arrow Lake: Core Ultra 200
+            require: AVX2
+            forbid: AVX-512F
+          - chip: spr # Sapphire Rapids: Xeon with AVX-512
+            require: AVX-512F
+            forbid: ''
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      SDE_URL: https://downloadmirror.intel.com/924984/sde-external-10.13.1-2026-07-28-win.tar.xz
+      SDE_SHA256: 74E626EDE09B0BAA5011FC9E51B58627EA92C3FC0BAE5FD7DB34B490F335F651
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: rigometry-exe
+          path: target/release
+      - name: Install pinned Intel SDE
+        run: |
+          $archive = Join-Path $env:RUNNER_TEMP 'sde.tar.xz'
+          Invoke-WebRequest -Uri $env:SDE_URL -OutFile $archive
+          if ((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash -ne $env:SDE_SHA256) { throw 'Intel SDE checksum mismatch.' }
+          $root = Join-Path $env:RUNNER_TEMP 'sde'
+          7z x $archive -so | 7z x -si -ttar "-o$root" | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw 'Intel SDE extraction failed.' }
+          $sde = Get-ChildItem -LiteralPath $root -Recurse -Filter sde.exe | Select-Object -First 1
+          if (-not $sde) { throw 'sde.exe missing from the archive.' }
+          "SDE_EXE=$($sde.FullName)" >> $env:GITHUB_ENV
+      - name: Report and scan as ${{ matrix.chip }}
+        run: ./scripts/verify-windows.ps1 -SkipBuild -SkipTests -TimeoutSeconds 900 -Launcher $env:SDE_EXE, '-${{ matrix.chip }}', '--'
+      - name: Check detection against the emulated chip
+        env:
+          REQUIRE: ${{ matrix.require }}
+          FORBID: ${{ matrix.forbid }}
+        run: |
+          $summary = Get-ChildItem artifacts/verification -Recurse -Filter verification.json | Get-Content -Raw | ConvertFrom-Json
+          $summary | Select-Object cpu_vendor, cpu_model, cpu_instruction_sets, cpu_caches | Format-List
+          $sets = @($summary.cpu_instruction_sets)
+          if ($summary.cpu_vendor -cne 'GenuineIntel') { throw "Expected GenuineIntel, got '$($summary.cpu_vendor)'." }
+          foreach ($name in $env:REQUIRE -split ' ' | Where-Object { $_ }) { if ($sets -notcontains $name) { throw "$name not detected." } }
+          foreach ($name in $env:FORBID -split ' ' | Where-Object { $_ }) { if ($sets -contains $name) { throw "$name detected but the chip lacks it." } }
+          foreach ($level in 'L1', 'L2', 'L3') { if (-not ($summary.cpu_caches -match "^$level ")) { throw "$level cache missing from CPUID leaf 4." } }
+
+  arm64-emulation:
+    # The x64 release under Windows 11 on Arm's x64 emulation. Headless only: the runner has no GPU.
+    name: Windows on Arm (x64 emulation)
+    needs: windows
+    runs-on: windows-11-arm
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: rigometry-exe
+          path: target/release
+      - name: Confirm an Arm host and an x64 executable
+        run: |
+          $os = [Runtime.InteropServices.RuntimeInformation]::OSArchitecture
+          if ($os -ne 'Arm64') { throw "Expected an Arm64 host, got $os." }
+          $bytes = [IO.File]::ReadAllBytes('target/release/rigometry.exe')
+          $machine = [BitConverter]::ToUInt16($bytes, [BitConverter]::ToInt32($bytes, 0x3c) + 4)
+          if ($machine -ne 0x8664) { throw ('Expected an x64 executable, got machine 0x{0:x4}.' -f $machine) }
+      - name: Report and scan under emulation
+        run: |
+          ./scripts/verify-windows.ps1 -SkipBuild -SkipTests
+          Get-ChildItem artifacts/verification -Recurse -Filter verification.json | Get-Content -Raw | ConvertFrom-Json |
+            Select-Object cpu_vendor, cpu_model, cpu_instruction_sets, cpu_caches, cpu_state | Format-List
 
   advisories:
     name: Dependency advisories
@@ -76,7 +176,7 @@ jobs:
   release:
     name: Prepare draft release
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
-    needs: [windows, advisories]
+    needs: [windows, cpu-emulation, arm64-emulation, advisories]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:

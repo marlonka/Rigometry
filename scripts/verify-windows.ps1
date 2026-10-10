@@ -5,6 +5,8 @@ param(
     [switch]$SkipTests,
     [switch]$Capture,
     [string]$ScanPath,
+    # Command prefix that runs the executable, e.g. an emulator: sde.exe, -nhm, --
+    [string[]]$Launcher = @(),
     [ValidateRange(30, 3600)][int]$TimeoutSeconds = 300
 )
 
@@ -34,11 +36,15 @@ function Invoke-Cargo([string[]]$CargoArguments) {
 
 function Invoke-Application([string[]]$ApplicationArguments) {
     $start = [Diagnostics.ProcessStartInfo]::new()
-    $start.FileName = $binaryPath
+    $start.FileName = if ($Launcher.Count -gt 0) { $Launcher[0] } else { $binaryPath }
     $start.WorkingDirectory = $workspacePath
     $start.UseShellExecute = $false
     $start.CreateNoWindow = $true
     $start.WindowStyle = [Diagnostics.ProcessWindowStyle]::Hidden
+    if ($Launcher.Count -gt 0) {
+        foreach ($value in @($Launcher | Select-Object -Skip 1)) { $start.ArgumentList.Add($value) }
+        $start.ArgumentList.Add($binaryPath)
+    }
     foreach ($value in $ApplicationArguments) { $start.ArgumentList.Add($value) }
     $process = [Diagnostics.Process]::Start($start)
     try {
@@ -118,6 +124,11 @@ try {
         release_build_run = -not [bool]$SkipBuild
         controlled_fixture = $fixture
         scan_status = $scan.status
+        launcher = $Launcher
+        cpu_vendor = @($hardware.inventory.cpu | Where-Object label -eq 'Vendor' | ForEach-Object value) | Select-Object -First 1
+        cpu_model = @($hardware.inventory.cpu | Where-Object label -eq 'Model' | ForEach-Object value) | Select-Object -First 1
+        cpu_instruction_sets = @(@($hardware.inventory.cpu | Where-Object label -eq 'Instruction sets (hardware)' | ForEach-Object value) | Select-Object -First 1) -split ' · ' | Where-Object { $_ }
+        cpu_caches = @($hardware.inventory.cpu | Where-Object label -match '^L\d ' | ForEach-Object label)
         cpu_state = $hardware.sample.cpu_usage.state
         adapter_count = @($hardware.inventory.adapters).Count
         captures_created = [bool]$Capture
