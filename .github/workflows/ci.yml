@@ -129,6 +129,13 @@ jobs:
           foreach ($name in $env:REQUIRE -split ' ' | Where-Object { $_ }) { if ($sets -notcontains $name) { throw "$name not detected." } }
           foreach ($name in $env:FORBID -split ' ' | Where-Object { $_ }) { if ($sets -contains $name) { throw "$name detected but the chip lacks it." } }
           foreach ($level in 'L1', 'L2', 'L3') { if (-not ($summary.cpu_caches -match "^$level ")) { throw "$level cache missing from CPUID leaf 4." } }
+      - name: Keep emulated reports
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: report-sde-${{ matrix.chip }}
+          path: artifacts/verification/*/*.json
+          retention-days: 14
 
   arm64-emulation:
     # The x64 release under Windows 11 on Arm's x64 emulation. Headless only: the runner has no GPU.
@@ -159,6 +166,13 @@ jobs:
           ./scripts/verify-windows.ps1 -SkipBuild -SkipTests
           Get-ChildItem artifacts/verification -Recurse -Filter verification.json | Get-Content -Raw | ConvertFrom-Json |
             Select-Object cpu_vendor, cpu_model, cpu_instruction_sets, cpu_caches, cpu_state | Format-List
+      - name: Keep emulated report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: report-windows-on-arm
+          path: artifacts/verification/*/*.json
+          retention-days: 14
 
   advisories:
     name: Dependency advisories
