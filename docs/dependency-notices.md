@@ -227,3 +227,49 @@ The Rust standard library is outside Cargo.lock; its [original notices](toolchai
 | [zmij](https://crates.io/crates/zmij/1.0.23) | 1.0.23 | Transitive | MIT | LICENSE-MIT |
 | [zune-core](https://crates.io/crates/zune-core/0.5.3) | 0.5.3 | Transitive | MIT OR Apache-2.0 OR Zlib | LICENSE-APACHE, LICENSE-MIT, LICENSE-ZLIB |
 | [zune-jpeg](https://crates.io/crates/zune-jpeg/0.5.15) | 0.5.15 | Transitive | MIT OR Apache-2.0 OR Zlib | LICENSE-APACHE, LICENSE-MIT, LICENSE-ZLIB |
+
+## macOS-only packages
+
+33 further package versions resolve only for `aarch64-apple-darwin` and `x86_64-apple-darwin`:
+
+```sh
+cargo metadata --locked --offline --format-version 1 --filter-platform aarch64-apple-darwin
+```
+
+The objc2 framework crates are derived from Apple SDK headers; see their upstream licensing statement below. AppKit, Foundation and other system frameworks are linked from macOS, not bundled.
+
+| Package | Version | Relationship | Declared license | Packaged notice files |
+| --- | --- | --- | --- | --- |
+| [accesskit_consumer](https://crates.io/crates/accesskit_consumer/0.38.0) | 0.38.0 | Transitive, macOS only | MIT OR Apache-2.0 | upstream license supplement |
+| [accesskit_macos](https://crates.io/crates/accesskit_macos/0.26.3) | 0.26.3 | Transitive, macOS only | MIT OR Apache-2.0 | upstream license supplement |
+| [bitflags](https://crates.io/crates/bitflags/1.3.2) | 1.3.2 | Transitive, macOS only | MIT/Apache-2.0 | LICENSE-MIT |
+| [block2](https://crates.io/crates/block2/0.5.1) | 0.5.1 | Transitive, macOS only | MIT | upstream license supplement |
+| [block2](https://crates.io/crates/block2/0.6.2) | 0.6.2 | Transitive, macOS only | MIT | upstream license supplement |
+| [cgl](https://crates.io/crates/cgl/0.3.2) | 0.3.2 | Transitive, macOS only | MIT / Apache-2.0 | LICENSE-MIT, COPYING |
+| [core-foundation](https://crates.io/crates/core-foundation/0.9.4) | 0.9.4 | Transitive, macOS only | MIT OR Apache-2.0 | LICENSE-MIT |
+| [core-foundation-sys](https://crates.io/crates/core-foundation-sys/0.8.7) | 0.8.7 | Transitive, macOS only | MIT OR Apache-2.0 | LICENSE-MIT |
+| [core-graphics](https://crates.io/crates/core-graphics/0.23.2) | 0.23.2 | Transitive, macOS only | MIT OR Apache-2.0 | LICENSE-MIT, COPYRIGHT |
+| [core-graphics-types](https://crates.io/crates/core-graphics-types/0.1.3) | 0.1.3 | Transitive, macOS only | MIT OR Apache-2.0 | LICENSE-MIT |
+| [dispatch](https://crates.io/crates/dispatch/0.2.0) | 0.2.0 | Transitive, macOS only | MIT | declared MIT; standard text supplied |
+| [dispatch2](https://crates.io/crates/dispatch2/0.3.1) | 0.3.1 | Transitive, macOS only | Zlib OR Apache-2.0 OR MIT | upstream license supplement |
+| [errno](https://crates.io/crates/errno/0.3.14) | 0.3.14 | Transitive, macOS only | MIT OR Apache-2.0 | LICENSE-MIT |
+| [foreign-types](https://crates.io/crates/foreign-types/0.5.0) | 0.5.0 | Transitive, macOS only | MIT/Apache-2.0 | LICENSE-MIT |
+| [foreign-types-macros](https://crates.io/crates/foreign-types-macros/0.2.4) | 0.2.4 | Transitive, macOS only | MIT/Apache-2.0 | LICENSE-MIT |
+| [foreign-types-shared](https://crates.io/crates/foreign-types-shared/0.3.1) | 0.3.1 | Transitive, macOS only | MIT/Apache-2.0 | LICENSE-MIT |
+| [objc-sys](https://crates.io/crates/objc-sys/0.3.5) | 0.3.5 | Transitive, macOS only | MIT | upstream license supplement |
+| [objc2](https://crates.io/crates/objc2/0.5.2) | 0.5.2 | Transitive, macOS only | MIT | upstream license supplement |
+| [objc2](https://crates.io/crates/objc2/0.6.4) | 0.6.4 | Transitive, macOS only | MIT | upstream license supplement |
+| [objc2-app-kit](https://crates.io/crates/objc2-app-kit/0.2.2) | 0.2.2 | Transitive, macOS only | MIT | upstream license supplement |
+| [objc2-app-kit](https://crates.io/crates/objc2-app-kit/0.3.2) | 0.3.2 | Transitive, macOS only | Zlib OR Apache-2.0 OR MIT | upstream license supplement |
+| [objc2-core-data](https://crates.io/crates/objc2-core-data/0.2.2) | 0.2.2 | Transitive, macOS only | MIT | upstream license supplement |
+| [objc2-core-foundation](https://crates.io/crates/objc2-core-foundation/0.3.2) | 0.3.2 | Transitive, macOS only | Zlib OR Apache-2.0 OR MIT | upstream license supplement |
+| [objc2-core-graphics](https://crates.io/crates/objc2-core-graphics/0.3.2) | 0.3.2 | Transitive, macOS only | Zlib OR Apache-2.0 OR MIT | upstream license supplement |
+| [objc2-core-image](https://crates.io/crates/objc2-core-image/0.2.2) | 0.2.2 | Transitive, macOS only | MIT | upstream license supplement |
+| [objc2-encode](https://crates.io/crates/objc2-encode/4.1.0) | 4.1.0 | Transitive, macOS only | MIT | upstream license supplement |
+| [objc2-foundation](https://crates.io/crates/objc2-foundation/0.2.2) | 0.2.2 | Transitive, macOS only | MIT | upstream license supplement |
+| [objc2-foundation](https://crates.io/crates/objc2-foundation/0.3.2) | 0.3.2 | Transitive, macOS only | MIT | upstream license supplement |
+| [objc2-io-kit](https://crates.io/crates/objc2-io-kit/0.3.2) | 0.3.2 | Transitive, macOS only | Zlib OR Apache-2.0 OR MIT | upstream license supplement |
+| [objc2-io-surface](https://crates.io/crates/objc2-io-surface/0.3.2) | 0.3.2 | Transitive, macOS only | Zlib OR Apache-2.0 OR MIT | upstream license supplement |
+| [objc2-metal](https://crates.io/crates/objc2-metal/0.2.2) | 0.2.2 | Transitive, macOS only | MIT | upstream license supplement |
+| [objc2-quartz-core](https://crates.io/crates/objc2-quartz-core/0.2.2) | 0.2.2 | Transitive, macOS only | MIT | upstream license supplement |
+| [rustix](https://crates.io/crates/rustix/1.1.5) | 1.1.5 | Transitive, macOS only | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT | LICENSE-MIT, COPYRIGHT |

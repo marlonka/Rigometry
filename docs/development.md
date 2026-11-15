@@ -16,6 +16,19 @@ cargo build --release --locked
 
 The host should be `x86_64-pc-windows-msvc`. The configuration statically links the Microsoft runtime and does not enable build-machine-specific CPU instructions. A Windows SDK resource compiler embeds the application icon, product name and release version.
 
+### macOS
+
+Requirements: macOS 11 or later, Rustup and the Xcode command line tools (`xcode-select --install`).
+
+```sh
+rustup target add aarch64-apple-darwin x86_64-apple-darwin
+cargo build --release --locked
+./target/release/rigometry
+sh scripts/package-macos.sh Rigometry-local
+```
+
+The package script builds both architectures, joins them with `lipo`, writes `Rigometry.app` with its icon and `Info.plist`, signs it ad hoc and creates a ZIP with per-file and archive checksums, then checks that the unpacked app runs. Ad-hoc signing is required to run on Apple silicon; it is not a Developer ID signature or notarization. Platform code lives in `src/hardware/macos.rs` (sysctl, system_profiler, IOKit statistics) and `src/storage/bulk.rs` (parallel `getattrlistbulk` folder listings, adapted from FSearch); their parsers have tests that run on every host.
+
 ## Checks
 
 ```powershell
@@ -31,7 +44,7 @@ Translation catalogs in `src/i18n/` contain rows of `[English source, German, Fr
 
 The release verification script builds the app, writes a native hardware report and scans a controlled Unicode fixture. Outputs stay in ignored `artifacts/`. It stops only its own child processes.
 
-CI runs formatting, Clippy, tests, release verification, package verification and a RustSec advisory check. Tagged builds additionally prepare a draft GitHub Release. Native hardware accuracy, Narrator and mixed-DPI behavior require manual verification.
+CI runs formatting, Clippy, tests, release verification, package verification and a RustSec advisory check on Windows, and Clippy for both Mac architectures, tests, packaging and a headless report and scan of the packaged app on macOS. Tagged builds additionally prepare a draft GitHub Release. Native hardware accuracy, Narrator and mixed-DPI behavior require manual verification.
 
 Two compatibility jobs rerun the release verification on the built executable:
 

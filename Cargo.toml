@@ -1,13 +1,13 @@
 [package]
 name = "rigometry"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 rust-version = "1.99"
-description = "Local Windows hardware monitoring and storage inspection"
+description = "Local hardware monitoring and storage inspection for Windows and macOS"
 license = "MIT"
 readme = "README.md"
 repository = "https://github.com/marlonka/Rigometry"
-keywords = ["windows", "hardware", "monitoring", "storage", "egui"]
+keywords = ["windows", "macos", "hardware", "monitoring", "storage"]
 categories = ["gui", "hardware-support", "filesystem"]
 publish = false
 

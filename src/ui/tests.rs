@@ -9,6 +9,7 @@ use egui_kittest::{
 };
 use std::{collections::VecDeque, fs, path::Path, sync::atomic::Ordering};
 
+#[cfg(windows)]
 #[test]
 fn explorer_reveal_cannot_search_for_an_executable_in_an_untrusted_directory() {
     let fixture = tempfile::tempdir().unwrap();
@@ -24,6 +25,7 @@ fn explorer_reveal_cannot_search_for_an_executable_in_an_untrusted_directory() {
     assert!(explorer_command(Path::new("C:\\data\\bad\" /root,C:\\")).is_err());
 }
 
+#[cfg(windows)]
 #[test]
 fn administrator_scan_passes_the_path_as_one_argument() {
     // CommandLineToArgvW reads `\"` as a literal quote, so a drive root's
@@ -36,6 +38,18 @@ fn administrator_scan_passes_the_path_as_one_argument() {
         assert_eq!(scan_argument(Path::new(path)).unwrap(), argument);
     }
     assert!(scan_argument(Path::new("C:\\a\" --headless")).is_err());
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn finder_reveal_uses_the_system_executable_and_selects_the_entry() {
+    let fixture = tempfile::tempdir().unwrap();
+    let target = fixture.path().join("-R a,b.txt");
+    let command = file_manager_command(&target).unwrap();
+    assert_eq!(command.get_program(), "/usr/bin/open");
+    let args: Vec<_> = command.get_args().collect();
+    assert_eq!(args[..2], ["-R", "--"]);
+    assert_eq!(Path::new(args[2]), target);
 }
 
 fn app_harness() -> Harness<'static, App> {
@@ -170,7 +184,8 @@ fn primary_views_support_accessible_navigation_keyboard_and_minimum_size() {
         navigate(&mut harness, label);
         assert_eq!(harness.state().state.settings.page, page);
     }
-    harness.key_press_modifiers(Modifiers::CTRL, Key::Num4);
+    // Command is Ctrl on Windows and ⌘ on macOS.
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Num4);
     harness.run_steps(2);
     assert_eq!(harness.state().state.settings.page, Page::Storage);
     assert!(harness.query_by_label("No scan results").is_some());
@@ -276,7 +291,7 @@ fn storage_scan_drill_down_largest_files_and_filter_use_real_results() {
     for name in ["Projects_日本語", "small.txt", "Empty"] {
         assert!(
             harness
-                .query_by_role_and_label(Role::Button, &format!("Reveal in Explorer {name}"))
+                .query_by_role_and_label(Role::Button, &format!("{REVEAL} {name}"))
                 .is_some(),
             "{name} has no reveal button"
         );

@@ -60,7 +60,24 @@ impl Language {
         }
         #[cfg(not(windows))]
         {
-            Self::English
+            static SYSTEM: std::sync::OnceLock<Language> = std::sync::OnceLock::new();
+            *SYSTEM.get_or_init(|| Self::from_locale(&system_locale()))
+        }
+    }
+
+    /// Maps a locale such as `de_DE`, `fr-CA` or `es_MX.UTF-8` to an interface language.
+    #[cfg(any(not(windows), test))]
+    fn from_locale(locale: &str) -> Self {
+        let primary = locale
+            .split(['_', '-', '.', '@'])
+            .next()
+            .unwrap_or_default()
+            .to_ascii_lowercase();
+        match primary.as_str() {
+            "de" => Self::German,
+            "fr" => Self::French,
+            "es" => Self::Spanish,
+            _ => Self::English,
         }
     }
 
@@ -192,6 +209,30 @@ impl Language {
             format!("{} {}", self.decimal(n, 2), UNITS[unit])
         }
     }
+}
+
+/// The preferred interface language: macOS keeps it in the global `AppleLanguages`
+/// default, which apps started from Finder see without any `LANG` variable.
+#[cfg(not(windows))]
+fn system_locale() -> String {
+    #[cfg(target_os = "macos")]
+    if let Ok(output) = std::process::Command::new("/usr/bin/defaults")
+        .args(["read", "-g", "AppleLanguages"])
+        .stderr(std::process::Stdio::null())
+        .output()
+        && output.status.success()
+        && let Some(first) = String::from_utf8_lossy(&output.stdout)
+            .split(['(', ',', ')', '\n'])
+            .map(|item| item.trim().trim_matches('"'))
+            .find(|item| !item.is_empty())
+    {
+        return first.to_owned();
+    }
+    ["LC_ALL", "LC_MESSAGES", "LANG"]
+        .into_iter()
+        .filter_map(|name| std::env::var(name).ok())
+        .find(|value| !value.is_empty() && value != "C" && value != "POSIX")
+        .unwrap_or_default()
 }
 
 fn patterns() -> &'static Vec<&'static str> {
@@ -330,6 +371,21 @@ mod tests {
             }
         }
     }
+    #[test]
+    fn locales_map_regional_variants_to_their_language() {
+        for (locale, language) in [
+            ("de-DE", Language::German),
+            ("de_AT.UTF-8", Language::German),
+            ("fr-CA", Language::French),
+            ("es-419", Language::Spanish),
+            ("en-US", Language::English),
+            ("ja", Language::English),
+            ("", Language::English),
+        ] {
+            assert_eq!(Language::from_locale(locale), language, "{locale}");
+        }
+    }
+
     #[test]
     fn formatting_preserves_injected_paths_and_uses_decimal_commas() {
         assert_eq!(Language::German.decimal(12.5, 1), "12,5");

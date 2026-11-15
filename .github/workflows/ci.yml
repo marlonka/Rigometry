@@ -67,6 +67,53 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  macos:
+    name: macOS build and tests
+    runs-on: macos-15
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install pinned Rust toolchain and both Mac targets
+        run: |
+          rustup show active-toolchain
+          rustup target add aarch64-apple-darwin x86_64-apple-darwin
+      - name: Clippy (Apple silicon and Intel)
+        run: |
+          cargo clippy --all-targets --locked --target aarch64-apple-darwin -- -D warnings
+          cargo clippy --all-targets --locked --target x86_64-apple-darwin -- -D warnings
+      - name: Unit, UI and process tests
+        run: cargo test --all-targets --locked
+      - name: Package universal app and verify checksums
+        run: sh scripts/package-macos.sh Rigometry-ci-macos
+      - name: Headless report and scan from the packaged app
+        run: |
+          app=dist/Rigometry-ci-macos/Rigometry.app/Contents/MacOS/rigometry
+          out=$(mktemp -d)
+          "$app" --headless --report "$out/report.json"
+          "$app" --headless --scan "$PWD/src" --export "$out/scan.json"
+          python3 -c 'import json,sys; [json.load(open(p)) for p in sys.argv[1:]]' "$out/report.json" "$out/scan.json"
+          grep -o '"Model"[^}]*' "$out/report.json" | head -n 3
+          if arch -x86_64 /usr/bin/true 2>/dev/null; then
+            arch -x86_64 "$app" --version
+          else
+            echo 'Rosetta is unavailable on this runner; the Intel slice was verified with lipo only.'
+          fi
+      - name: Build release package
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: sh scripts/package-macos.sh
+      - name: Preserve verified release package
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: macos-universal
+          path: |
+            dist/Rigometry-*-macos-universal.zip
+            dist/Rigometry-*-macos-universal.zip.sha256
+          if-no-files-found: error
+          retention-days: 14
+
   cpu-emulation:
     # Intel SDE emulates each CPU's instruction set and CPUID identity, and stops on any
     # instruction the chip lacks. It does not emulate cache leaf 4, and Windows APIs, WMI and
@@ -196,7 +243,7 @@ jobs:
   release:
     name: Prepare draft release
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
-    needs: [windows, cpu-emulation, arm64-emulation, advisories]
+    needs: [windows, macos, cpu-emulation, arm64-emulation, advisories]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
@@ -209,7 +256,11 @@ jobs:
         with:
           name: windows-x64
           path: release-assets
-      - name: Verify downloaded archive
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: macos-universal
+          path: release-assets
+      - name: Verify downloaded archives
         working-directory: release-assets
         run: sha256sum --check --strict *.sha256
       - name: Create draft with verified assets
@@ -225,11 +276,12 @@ jobs:
           $section = [regex]::Match($changelog, "(?ms)^$heading\r?\n(.*?)(?=^## |\z)")
           if (-not $section.Success) { throw 'Changelog entry missing for release tag.' }
           $notes = $section.Groups[1].Value.Trim()
-          $notes += "`n`nWindows 11 on Intel/AMD x64. ARM64 and 32-bit systems are not supported. Intel hardware is not yet physically verified; GPU sensors depend on drivers."
-          $notes += "`n`nPortable, unsigned build. Extract the ZIP with its license files. Check the adjacent SHA-256 before use."
+          $notes += "`n`n**Windows:** Windows 11 on Intel/AMD x64. Native ARM64 and 32-bit systems are not supported. Intel hardware is not yet physically verified; GPU sensors depend on drivers."
+          $notes += "`n`n**macOS:** universal app for Apple silicon and Intel Macs, macOS 11 or later. GPU sensors, firmware details and administrator scans are Windows-only. [Install on a Mac](https://github.com/marlonka/Rigometry/blob/$env:RELEASE_TAG/docs/usage.md#install-on-macos)"
+          $notes += "`n`nPortable, unsigned builds. Extract the ZIP with its license files. Check the adjacent SHA-256 before use."
           $notes += "`n`nSource: $env:GITHUB_SHA`nBuild: https://github.com/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID`n"
           [IO.File]::WriteAllText('release-notes.md', $notes)
           $assets = @(Get-ChildItem release-assets -File | ForEach-Object FullName)
-          if ($assets.Count -ne 2) { throw 'Expected one ZIP and its checksum.' }
+          if ($assets.Count -ne 4) { throw 'Expected a Windows and a macOS ZIP, each with its checksum.' }
           gh release create $env:RELEASE_TAG @assets --verify-tag --draft --title "Rigometry $version" --notes-file release-notes.md
           if ($LASTEXITCODE -ne 0) { throw 'Draft release creation failed; never replace a published asset.' }

@@ -92,11 +92,13 @@ impl App {
                 .unwrap()
                 .insert(0, "Segoe UI".into());
         }
-        // Use installed Windows glyphs for CJK file names without redistributing fonts.
+        // Use installed system glyphs for CJK file names without redistributing fonts.
         for candidate in [
             "C:/Windows/Fonts/msgothic.ttc",
             "C:/Windows/Fonts/msyh.ttc",
             "C:/Windows/Fonts/malgun.ttf",
+            "/System/Library/Fonts/Hiragino Sans GB.ttc",
+            "/System/Library/Fonts/AppleSDGothicNeo.ttc",
         ] {
             if let Ok(font) = std::fs::read(candidate) {
                 fonts
@@ -282,7 +284,7 @@ impl App {
                     .cloned()
                     .collect::<Vec<_>>()
                     .join(" · ");
-                summary_row(ui, "Windows", &os, None);
+                summary_row(ui, crate::model::OS_NAME, &os, None);
                 summary_row(
                     ui,
                     "BIOS",
@@ -903,7 +905,7 @@ impl App {
             return;
         };
         if inv.adapters.is_empty() {
-            ui.label(tx(ui, "No graphics adapters reported by DXGI"));
+            ui.label(tx(ui, NO_GPU));
             return;
         }
         self.state.adapter = self.state.adapter.min(inv.adapters.len() - 1);
@@ -1106,7 +1108,7 @@ impl App {
                 [path_width, 34.],
                 TextEdit::singleline(&mut self.state.settings.path)
                     .id(Id::new("scan-path"))
-                    .hint_text(tx(ui, "C:\\ or a folder path"))
+                    .hint_text(tx(ui, PATH_HINT))
                     .margin(vec2(10., 8.)),
             )
             .labelled_by(path_label.id);
@@ -1455,7 +1457,7 @@ impl App {
             if ui.button(tx(ui, "Copy path")).clicked() {
                 ui.ctx().copy_text(path.to_string_lossy().into());
             }
-            if ui.button(tx(ui, "Reveal in Explorer")).clicked()
+            if ui.button(tx(ui, REVEAL)).clicked()
                 && let Err(e) = reveal(&path)
             {
                 self.state.notice = Some(e);
@@ -1787,7 +1789,7 @@ impl App {
                 ("CPU", &inv.cpu),
                 ("Memory", &inv.memory),
                 ("Motherboard", &inv.motherboard),
-                ("Windows", &inv.os),
+                (crate::model::OS_NAME, &inv.os),
             ] {
                 folding(ui, tx(ui, name)).show(ui, |ui| {
                     for f in fields {
@@ -2006,7 +2008,8 @@ impl eframe::App for App {
             }
         }
         ctx.input(|i| {
-            if i.modifiers.ctrl {
+            // Ctrl on Windows, Command on macOS.
+            if i.modifiers.command {
                 for (key, page) in [
                     (Key::Num1, Page::Overview),
                     (Key::Num2, Page::Cpu),
@@ -3097,7 +3100,7 @@ fn entry_menu(
     action: &mut Option<EntryAction>,
 ) {
     response.context_menu(|ui| {
-        if ui.button(tx(ui, "Reveal in Explorer")).clicked() {
+        if ui.button(tx(ui, REVEAL)).clicked() {
             *action = Some(EntryAction::Reveal(node.id));
             ui.close();
         }
@@ -3113,7 +3116,7 @@ fn entry_menu(
 }
 /// A folder with an outgoing arrow, drawn on the app's 24-unit icon grid.
 fn reveal_button(ui: &mut Ui, name: &str) -> Response {
-    let label = format!("{} {name}", tx(ui, "Reveal in Explorer"));
+    let label = format!("{} {name}", tx(ui, REVEAL));
     let response = ui.add_sized([28., 28.], Button::new("").frame(false));
     response.widget_info(|| WidgetInfo::labeled(WidgetType::Button, ui.is_enabled(), &label));
     let color = if response.hovered() {
@@ -3199,6 +3202,7 @@ fn scan_status(state: &State) -> String {
 }
 
 /// Whether this process already has administrator rights.
+#[cfg(windows)]
 fn elevated() -> bool {
     use windows::Win32::{
         Foundation::{CloseHandle, HANDLE},
@@ -3226,6 +3230,7 @@ fn elevated() -> bool {
 }
 /// Starts this executable again with administrator rights, scanning `path`.
 /// Windows asks the user for consent; declining returns an error.
+#[cfg(windows)]
 fn relaunch_elevated(path: &std::path::Path) -> Result<(), String> {
     use std::os::windows::ffi::OsStrExt;
     use windows::{
@@ -3255,6 +3260,7 @@ fn relaunch_elevated(path: &std::path::Path) -> Result<(), String> {
 }
 /// `--scan "path"` for a Windows command line. Paths cannot contain quotes;
 /// backslashes before the closing quote are doubled so it stays a quote.
+#[cfg(windows)]
 fn scan_argument(path: &std::path::Path) -> Result<std::ffi::OsString, String> {
     let text = path
         .to_str()
@@ -3265,12 +3271,14 @@ fn scan_argument(path: &std::path::Path) -> Result<std::ffi::OsString, String> {
     let trailing = text.len() - text.trim_end_matches('\\').len();
     Ok(format!("--scan \"{text}{}\"", "\\".repeat(trailing)).into())
 }
+#[cfg(windows)]
 fn reveal(path: &std::path::Path) -> Result<(), String> {
     explorer_command(path)?
         .spawn()
         .map(|_| ())
         .map_err(|e| e.to_string())
 }
+#[cfg(windows)]
 fn explorer_command(path: &std::path::Path) -> Result<std::process::Command, String> {
     use std::os::windows::ffi::{OsStrExt, OsStringExt};
     use windows::Win32::System::SystemInformation::GetWindowsDirectoryW;
@@ -3299,6 +3307,62 @@ fn explorer_command(path: &std::path::Path) -> Result<std::process::Command, Str
 }
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
+
+/// Administrator scans rely on the Windows consent prompt; other systems never offer them.
+#[cfg(not(windows))]
+fn elevated() -> bool {
+    true
+}
+#[cfg(not(windows))]
+fn relaunch_elevated(_: &std::path::Path) -> Result<(), String> {
+    Err("Administrator scan was not started".into())
+}
+/// Opens the file manager with `path` selected.
+#[cfg(not(windows))]
+fn reveal(path: &std::path::Path) -> Result<(), String> {
+    file_manager_command(path)?
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+}
+#[cfg(not(windows))]
+fn file_manager_command(path: &std::path::Path) -> Result<std::process::Command, String> {
+    let path = std::path::absolute(path).map_err(|error| error.to_string())?;
+    // An absolute executable avoids PATH lookup; `--` stops option parsing.
+    #[cfg(target_os = "macos")]
+    let command = {
+        let mut command = std::process::Command::new("/usr/bin/open");
+        command.arg("-R").arg("--").arg(&path);
+        command
+    };
+    #[cfg(not(target_os = "macos"))]
+    let command = {
+        let folder = if path.is_dir() {
+            path.clone()
+        } else {
+            path.parent().map(PathBuf::from).unwrap_or(path.clone())
+        };
+        let mut command = std::process::Command::new("/usr/bin/xdg-open");
+        command.arg(folder);
+        command
+    };
+    Ok(command)
+}
+const NO_GPU: &str = if cfg!(windows) {
+    "No graphics adapters reported by DXGI"
+} else {
+    "No graphics adapters reported by the system"
+};
+const REVEAL: &str = if cfg!(target_os = "macos") {
+    "Show in Finder"
+} else {
+    "Reveal in Explorer"
+};
+const PATH_HINT: &str = if cfg!(windows) {
+    "C:\\ or a folder path"
+} else {
+    "/ or a folder path"
+};
 
 fn navigation(ui: &mut Ui, label: &str, key: &str, selected: bool, kind: usize) -> bool {
     let translated = tx(ui, label);

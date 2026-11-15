@@ -1,6 +1,15 @@
 use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+/// Operating system name shown as a section label.
+pub const OS_NAME: &str = if cfg!(target_os = "macos") {
+    "macOS"
+} else if cfg!(windows) {
+    "Windows"
+} else {
+    "Linux"
+};
+
 pub fn now_ms() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)

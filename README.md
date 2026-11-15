@@ -4,7 +4,7 @@
 
 # Rigometry
 
-Hardware monitoring and storage analysis for **Windows 11 on Intel and AMD x64 PCs**.
+Hardware monitoring and storage analysis for **Windows 11 PCs with Intel or AMD processors** and **Macs with Apple silicon or Intel processors**.
 
 Rigometry is a personal hobby project (Privatprojekt) by Marlon Kaulich, available free of charge with no paid support.
 
@@ -32,7 +32,7 @@ As administrator, Rigometry reads the NTFS master file table directly. Without a
 - **Find large files and folders:** scan a whole drive in seconds, with or without administrator rights, browse a sortable hierarchy and size map, search millions of entries with typo-tolerant ranking and `ext:`/`size:` filters, show any entry in Explorer and export CSV or JSON.
 - **Check storage accounting:** size on disk and file size, hard links, named streams, exclusions and partial results.
 - **Use the interface or command line:** dark/light themes, adjustable text size, reduced motion, hardware reports and automated scans.
-- **Choose your language:** English, Deutsch, Français or Español. The app follows the Windows display language by default; change it in Settings without restarting.
+- **Choose your language:** English, Deutsch, Français or Español. The app follows the Windows or macOS language by default; change it in Settings without restarting.
 
 Hardware queries and scans are read-only. No account, telemetry upload or bundled driver; administrator rights are requested only when you choose **Scan as administrator**. Settings are saved locally; reports and exports are created when requested.
 
@@ -49,20 +49,22 @@ Hardware queries and scans are read-only. No account, telemetry upload or bundle
 
 | Requirement | Support |
 | --- | --- |
-| Operating system | Windows 11, 64-bit |
-| Processor | Intel or AMD x86-64; for example Core, Core Ultra, Ryzen or Threadripper on a compatible Windows 11 system |
-| ARM processors | No native ARM64 build. Snapdragon and other Windows-on-ARM systems are not supported; x64 emulation is unverified |
+| Windows | Windows 11, 64-bit, on Intel or AMD x86-64; for example Core, Core Ultra, Ryzen or Threadripper |
+| macOS | macOS 11 Big Sur or later; one universal app for Apple silicon (M1 and later) and Intel Macs |
+| Windows on ARM | No native ARM64 build. The x64 build runs under Windows 11 x64 emulation in CI; Snapdragon hardware is unverified |
 | 32-bit processors / Windows | Not supported |
-| Other systems | Windows 10, Windows Server, Linux and macOS are not supported application targets |
+| Other systems | Windows 10, Windows Server and Linux are not supported application targets |
 | Graphics | Working OpenGL-capable vendor graphics driver for the desktop interface; headless reports do not require a graphics session |
 
-The release uses the baseline `x86_64-pc-windows-msvc` target, with no application-wide AVX, AVX2 or AVX-512 requirement and no build-machine-specific CPU optimization. This is an architecture requirement, **not a claim that every CPU model has been tested**. Physical verification currently covers an AMD Ryzen 7 9800X3D, NVIDIA GeForce RTX 5070 Ti and integrated AMD graphics. Intel systems are intended to work through the same Windows/CPUID interfaces but have not been physically verified.
+The release uses the baseline `x86_64-pc-windows-msvc` target, with no application-wide AVX, AVX2 or AVX-512 requirement and no build-machine-specific CPU optimization. This is an architecture requirement, **not a claim that every CPU model has been tested**. Physical verification currently covers an AMD Ryzen 7 9800X3D, NVIDIA GeForce RTX 5070 Ti and integrated AMD graphics. Intel systems are intended to work through the same Windows/CPUID interfaces but have not been physically verified. The macOS build is compiled and tested on Apple silicon in CI; Mac hardware readings have not yet been checked against physical Macs.
 
-**Sensor support varies.** CPU temperature, voltage and package power, active RAM timings and SPD/XMP/EXPO reading are not implemented. NVIDIA GPU sensors can use the NVML library supplied by an installed NVIDIA driver. AMD and Intel GPUs use Windows interfaces; temperature, fan and clock readings may be unavailable. The app does not change clocks, fan speeds or firmware.
+**Sensor support varies.** CPU temperature, voltage and package power, active RAM timings and SPD/XMP/EXPO reading are not implemented. NVIDIA GPU sensors can use the NVML library supplied by an installed NVIDIA driver. AMD and Intel GPUs use Windows interfaces; temperature, fan and clock readings may be unavailable. On a Mac, Rigometry reads the chip, performance and efficiency cores, caches, memory, model and GPU from macOS, and live GPU utilization from the graphics driver; Apple silicon CPU and GPU temperatures need privileged tools and are not shown. The app does not change clocks, fan speeds or firmware.
 
 ## Install and run
 
 Open [Releases](https://github.com/marlonka/Rigometry/releases), download the Windows x64 ZIP, extract it and run `Rigometry.exe`. Keep the included license and notice files.
+
+On a Mac, download the `macos-universal` ZIP, extract it and move **Rigometry.app** to Applications. The app is not notarized, so macOS asks once for confirmation: [step-by-step guide](docs/usage.md#install-on-macos).
 
 Releases include a SHA-256 checksum beside the ZIP and per-file checksums inside it. The executable is unsigned; a checksum verifies file integrity, not publisher identity. No installer is required.
 
@@ -70,6 +72,11 @@ Releases include a SHA-256 checksum beside the ZIP and per-file checksums inside
 # Build from an x64 Developer PowerShell with Rust and C++ Build Tools installed.
 cargo build --release --locked
 .\target\release\rigometry.exe
+```
+
+```sh
+# macOS with Rustup and the Xcode command line tools: universal Rigometry.app in dist/.
+sh scripts/package-macos.sh
 ```
 
 ## Understanding the readings

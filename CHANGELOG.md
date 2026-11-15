@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.0
+
+- **Rigometry for Mac:** one universal app for Apple silicon and Intel Macs, macOS 11 or later. [Install guide](docs/usage.md#install-on-macos)
+- On a Mac, the CPU page shows the chip, performance and efficiency cores, per-cluster caches and Arm instruction-set features; Intel Macs keep the full CPUID details.
+- The GPU page lists every Mac graphics processor with cores, Metal support, video memory and connected displays, and charts live utilization from the graphics driver. Dual-GPU Intel Macs also show temperature, clocks, fan and power where the driver publishes them.
+- Mac model, firmware version, installed memory, memory type and manufacturer appear in Overview and Diagnostics. Serial numbers and hardware UUIDs are never read into reports.
+- Storage scans on a Mac read whole folder listings on up to eight threads with `getattrlistbulk`, without opening files, and search works exactly as on Windows. Scanning `/` counts the startup disk once and does not enter other mounted volumes; files stored only in iCloud are not downloaded. Approach adapted from [FSearch](https://github.com/noahdunnagan/fsearch) (MIT).
+- **Show in Finder**, ⌘1–⌘4 shortcuts and the macOS language setting replace their Windows counterparts on a Mac.
+- CI builds, tests and packages the Mac app on every push and attaches it to tagged releases.
+
 ## 0.2.0
 
 - Storage search replaces the plain filter: ranked, typo-tolerant name matching that also uses folder names, with `'exact`, `^prefix`, `suffix$`, `!exclude` and `ext:`, `type:`, `kind:`, `size:`, `path:` filters. Adapted from [FSearch](https://github.com/noahdunnagan/fsearch) (MIT).

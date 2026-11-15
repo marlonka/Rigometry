@@ -24,6 +24,12 @@
     "Núcleos físicos"
   ],
   [
+    "Usable memory",
+    "Nutzbarer Speicher",
+    "Mémoire utilisable",
+    "Memoria utilizable"
+  ],
+  [
     "Windows usable memory",
     "Von Windows nutzbarer Speicher",
     "Mémoire utilisable par Windows",
@@ -622,5 +628,287 @@
     "GetLogicalProcessorInformationEx; höhere Klasse = höhere relative Leistung",
     "GetLogicalProcessorInformationEx ; classe supérieure = performances relatives supérieures",
     "GetLogicalProcessorInformationEx; clase superior = mayor rendimiento relativo"
+  ],
+  [
+    "Performance cores",
+    "Performance-Kerne",
+    "Cœurs performance",
+    "Núcleos de rendimiento"
+  ],
+  [
+    "Efficiency cores",
+    "Effizienz-Kerne",
+    "Cœurs efficacité",
+    "Núcleos de eficiencia"
+  ],
+  [
+    "Additional cores",
+    "Weitere Kerne",
+    "Cœurs supplémentaires",
+    "Núcleos adicionales"
+  ],
+  [
+    "L1 data cache (performance)",
+    "L1-Datencache (Performance)",
+    "Cache de données L1 (performance)",
+    "Caché de datos L1 (rendimiento)"
+  ],
+  [
+    "L1 instruction cache (performance)",
+    "L1-Befehlscache (Performance)",
+    "Cache d’instructions L1 (performance)",
+    "Caché de instrucciones L1 (rendimiento)"
+  ],
+  [
+    "L2 cache (performance)",
+    "L2-Cache (Performance)",
+    "Cache L2 (performance)",
+    "Caché L2 (rendimiento)"
+  ],
+  [
+    "L1 data cache (efficiency)",
+    "L1-Datencache (Effizienz)",
+    "Cache de données L1 (efficacité)",
+    "Caché de datos L1 (eficiencia)"
+  ],
+  [
+    "L1 instruction cache (efficiency)",
+    "L1-Befehlscache (Effizienz)",
+    "Cache d’instructions L1 (efficacité)",
+    "Caché de instrucciones L1 (eficiencia)"
+  ],
+  [
+    "L2 cache (efficiency)",
+    "L2-Cache (Effizienz)",
+    "Cache L2 (efficacité)",
+    "Caché L2 (eficiencia)"
+  ],
+  [
+    "{0} · per core",
+    "{0} · pro Kern",
+    "{0} · par cœur",
+    "{0} · por núcleo"
+  ],
+  [
+    "{0} · shared by {1} cores",
+    "{0} · geteilt von {1} Kernen",
+    "{0} · partagé par {1} cœurs",
+    "{0} · compartida por {1} núcleos"
+  ],
+  [
+    "Cache line",
+    "Cache-Zeile",
+    "Ligne de cache",
+    "Línea de caché"
+  ],
+  [
+    "Model number",
+    "Modellnummer",
+    "Numéro de modèle",
+    "Número de modelo"
+  ],
+  [
+    "Chip",
+    "Chip",
+    "Puce",
+    "Chip"
+  ],
+  [
+    "Processor speed",
+    "Prozessortakt",
+    "Vitesse du processeur",
+    "Velocidad del procesador"
+  ],
+  [
+    "OS loader version",
+    "OS-Loader-Version",
+    "Version du chargeur du système",
+    "Versión del cargador del sistema"
+  ],
+  [
+    "SMC version",
+    "SMC-Version",
+    "Version du SMC",
+    "Versión de SMC"
+  ],
+  [
+    "Memory type",
+    "Speichertyp",
+    "Type de mémoire",
+    "Tipo de memoria"
+  ],
+  [
+    "Module manufacturer",
+    "Modulhersteller",
+    "Fabricant des modules",
+    "Fabricante de los módulos"
+  ],
+  [
+    "Configured speed",
+    "Konfigurierter Takt",
+    "Vitesse configurée",
+    "Velocidad configurada"
+  ],
+  [
+    "Populated modules",
+    "Bestückte Module",
+    "Modules installés",
+    "Módulos instalados"
+  ],
+  [
+    "Memory architecture",
+    "Speicherarchitektur",
+    "Architecture mémoire",
+    "Arquitectura de memoria"
+  ],
+  [
+    "Unified memory, shared by CPU and GPU",
+    "Gemeinsamer Speicher für CPU und GPU",
+    "Mémoire unifiée, partagée par le CPU et le GPU",
+    "Memoria unificada, compartida por CPU y GPU"
+  ],
+  [
+    "Unified memory, shared with the CPU",
+    "Gemeinsamer Speicher mit der CPU",
+    "Mémoire unifiée, partagée avec le CPU",
+    "Memoria unificada, compartida con la CPU"
+  ],
+  [
+    "Upgradeable",
+    "Aufrüstbar",
+    "Évolutive",
+    "Ampliable"
+  ],
+  [
+    "Yes",
+    "Ja",
+    "Oui",
+    "Sí"
+  ],
+  [
+    "No",
+    "Nein",
+    "Non",
+    "No"
+  ],
+  [
+    "Built-in",
+    "Integriert",
+    "Intégré",
+    "Integrada"
+  ],
+  [
+    "GPU cores",
+    "GPU-Kerne",
+    "Cœurs GPU",
+    "Núcleos de GPU"
+  ],
+  [
+    "Metal support",
+    "Metal-Unterstützung",
+    "Prise en charge de Metal",
+    "Compatibilidad con Metal"
+  ],
+  [
+    "Bus",
+    "Bus",
+    "Bus",
+    "Bus"
+  ],
+  [
+    "Video memory",
+    "Grafikspeicher",
+    "Mémoire vidéo",
+    "Memoria de vídeo"
+  ],
+  [
+    "{0} (shared)",
+    "{0} (geteilt)",
+    "{0} (partagée)",
+    "{0} (compartida)"
+  ],
+  [
+    "Connected displays",
+    "Angeschlossene Displays",
+    "Écrans connectés",
+    "Pantallas conectadas"
+  ],
+  [
+    "Renderer utilization",
+    "Renderer-Auslastung",
+    "Utilisation du moteur de rendu",
+    "Uso del renderizador"
+  ],
+  [
+    "Tiler utilization",
+    "Tiler-Auslastung",
+    "Utilisation du tiler",
+    "Uso del tiler"
+  ],
+  [
+    "GPU memory in use",
+    "Belegter GPU-Speicher",
+    "Mémoire GPU utilisée",
+    "Memoria de GPU en uso"
+  ],
+  [
+    "Core clock",
+    "Kerntakt",
+    "Fréquence du cœur",
+    "Reloj del núcleo"
+  ],
+  [
+    "No graphics adapters reported by the system",
+    "Das System meldet keine Grafikadapter",
+    "Le système ne signale aucun adaptateur graphique",
+    "El sistema no informa de adaptadores gráficos"
+  ],
+  [
+    "macOS reported no graphics processor.",
+    "macOS meldete keinen Grafikprozessor.",
+    "macOS n’a signalé aucun processeur graphique.",
+    "macOS no informó de ningún procesador gráfico."
+  ],
+  [
+    "System profiler unavailable: {0}",
+    "Systemprofiler nicht verfügbar: {0}",
+    "Profileur système indisponible : {0}",
+    "Perfilador del sistema no disponible: {0}"
+  ],
+  [
+    "macOS discovery is read-only: sysctl, system_profiler and IOKit registry properties, without administrator rights. Serial numbers and hardware UUIDs are not read into reports.",
+    "Die macOS-Erkennung liest nur: sysctl, system_profiler und IOKit-Registry-Eigenschaften, ohne Administratorrechte. Seriennummern und Hardware-UUIDs gelangen nicht in Berichte.",
+    "La détection macOS est en lecture seule : sysctl, system_profiler et propriétés du registre IOKit, sans droits d’administrateur. Les numéros de série et UUID matériels ne figurent pas dans les rapports.",
+    "La detección en macOS es de solo lectura: sysctl, system_profiler y propiedades del registro IOKit, sin derechos de administrador. Los números de serie y UUID de hardware no se incluyen en los informes."
+  ],
+  [
+    "Share of time the GPU was busy, as reported by its macOS driver.",
+    "Anteil der Zeit, in der die GPU ausgelastet war, laut ihrem macOS-Treiber.",
+    "Part du temps où le GPU était occupé, selon son pilote macOS.",
+    "Proporción del tiempo en que la GPU estuvo ocupada, según su controlador de macOS."
+  ],
+  [
+    "No IOAccelerator statistics matched this graphics processor",
+    "Keine IOAccelerator-Statistik passt zu diesem Grafikprozessor",
+    "Aucune statistique IOAccelerator ne correspond à ce processeur graphique",
+    "Ninguna estadística de IOAccelerator coincide con este procesador gráfico"
+  ],
+  [
+    "macOS exposes Apple silicon GPU temperature only to privileged tools such as powermetrics; none is bundled.",
+    "macOS gibt die GPU-Temperatur von Apple Silicon nur an privilegierte Werkzeuge wie powermetrics weiter; keines ist enthalten.",
+    "macOS ne fournit la température GPU d’Apple silicon qu’aux outils privilégiés comme powermetrics ; aucun n’est inclus.",
+    "macOS solo expone la temperatura de la GPU de Apple silicon a herramientas privilegiadas como powermetrics; no se incluye ninguna."
+  ],
+  [
+    "The macOS driver does not publish this reading",
+    "Der macOS-Treiber stellt diesen Messwert nicht bereit",
+    "Le pilote macOS ne publie pas cette mesure",
+    "El controlador de macOS no publica esta lectura"
+  ],
+  [
+    "macOS exposes CPU temperature only to privileged tools such as powermetrics; none is bundled.",
+    "macOS gibt die CPU-Temperatur nur an privilegierte Werkzeuge wie powermetrics weiter; keines ist enthalten.",
+    "macOS ne fournit la température du processeur qu’aux outils privilégiés comme powermetrics ; aucun n’est inclus.",
+    "macOS solo expone la temperatura de la CPU a herramientas privilegiadas como powermetrics; no se incluye ninguna."
   ]
 ]

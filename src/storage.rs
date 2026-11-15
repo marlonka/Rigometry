@@ -125,6 +125,7 @@ struct EntryInfo {
     logical: u64,
     allocated: u64,
     identity: Option<FileIdentity>,
+    #[cfg_attr(not(windows), allow(dead_code))]
     links: u64,
     note: String,
     errors: u64,
@@ -136,14 +137,22 @@ struct EntryInfo {
 #[derive(Clone, Copy, PartialEq, Debug)]
 enum Refusal {
     Denied,
+    #[cfg_attr(not(windows), allow(dead_code))]
     Locked,
 }
 
 impl Refusal {
     fn of_os_error(code: Option<i32>) -> Option<Self> {
+        #[cfg(windows)]
         match code {
             Some(5) => Some(Self::Denied),  // ERROR_ACCESS_DENIED
             Some(32) => Some(Self::Locked), // ERROR_SHARING_VIOLATION
+            _ => None,
+        }
+        // EPERM is how macOS privacy protection refuses a folder; EACCES is file permissions.
+        #[cfg(not(windows))]
+        match code {
+            Some(1 | 13) => Some(Self::Denied),
             _ => None,
         }
     }
@@ -204,14 +213,16 @@ fn scan(path: PathBuf, sender: Sender<ScanEvent>, cancel: Arc<AtomicBool>) {
     {
         #[cfg(windows)]
         listing::walk(&mut worker, visited.id, path, visited.refused);
-        #[cfg(not(windows))]
+        #[cfg(target_os = "macos")]
+        bulk::walk(&mut worker, visited.id, path, visited.refused);
+        #[cfg(not(any(windows, target_os = "macos")))]
         walk_portable(&mut worker, visited.id, path, visited.refused);
     }
     finish_scan(worker, started);
 }
 
-/// One entry at a time, through `visit`. Windows lists whole folders instead.
-#[cfg(not(windows))]
+/// One entry at a time, through `visit`. Windows and macOS list whole folders instead.
+#[cfg(not(any(windows, target_os = "macos")))]
 fn walk_portable(worker: &mut Worker, root: usize, path: PathBuf, refused: bool) {
     let mut directories = vec![(root, path, refused)];
     while let Some((parent, directory, refused)) = directories.pop() {
@@ -539,7 +550,19 @@ fn skip_metadata(metadata: &fs::Metadata) -> Option<Skip> {
 
 #[cfg(not(windows))]
 fn skip_metadata(metadata: &fs::Metadata) -> Option<Skip> {
-    metadata.file_type().is_symlink().then_some(Skip::Reparse)
+    if metadata.file_type().is_symlink() {
+        return Some(Skip::Reparse);
+    }
+    // iCloud Drive and other file providers mark evicted items as dataless.
+    #[cfg(target_os = "macos")]
+    {
+        use std::os::macos::fs::MetadataExt;
+        const SF_DATALESS: u32 = 0x4000_0000;
+        if metadata.st_flags() & SF_DATALESS != 0 {
+            return Some(Skip::Cloud);
+        }
+    }
+    None
 }
 
 #[cfg(windows)]
@@ -822,6 +845,8 @@ fn csv_text(text: &str) -> String {
     }
 }
 
+#[cfg(any(target_os = "macos", test))]
+mod bulk;
 #[cfg(windows)]
 mod listing;
 #[cfg(windows)]

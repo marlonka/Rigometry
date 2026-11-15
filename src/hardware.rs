@@ -1,6 +1,9 @@
 //! Read-only hardware discovery and telemetry. Construct and poll on the sensor worker.
+#[cfg(any(target_os = "macos", test))]
+mod macos;
 #[cfg(windows)]
 mod nvml;
+#[cfg(any(windows, test))]
 mod smbios;
 #[cfg(windows)]
 mod windows;
@@ -15,20 +18,7 @@ pub fn discover() -> Inventory {
     let mut system = System::new();
     system.refresh_cpu_all();
     system.refresh_memory();
-    let cpuid = raw_cpuid::CpuId::new();
-    if let Some(brand) = cpuid.get_processor_brand_string() {
-        result.cpu.push(Field::valid(
-            "Model",
-            brand.as_str().trim(),
-            "",
-            "CPUID brand string",
-        ));
-    }
-    if let Some(vendor) = cpuid.get_vendor_info() {
-        result
-            .cpu
-            .push(Field::valid("Vendor", vendor.as_str(), "", "CPUID leaf 0"));
-    }
+    cpu_identity(&mut result.cpu, &system);
     result.cpu.push(Field::valid(
         "Architecture",
         std::env::consts::ARCH,
@@ -40,14 +30,18 @@ pub fn discover() -> Inventory {
             "Physical cores",
             cores.to_string(),
             "",
-            "Windows processor topology / sysinfo",
+            if cfg!(windows) {
+                "Windows processor topology / sysinfo"
+            } else {
+                "sysinfo"
+            },
         ));
     }
     result.cpu.push(Field::valid(
         "Logical processors",
         system.cpus().len().to_string(),
         "",
-        "Windows / sysinfo",
+        SYSINFO_SOURCE,
     ));
     cpu_details(&mut result.cpu);
     #[cfg(windows)]
@@ -65,27 +59,27 @@ pub fn discover() -> Inventory {
     }
     #[cfg(not(windows))]
     result.memory.push(Field::valid(
-        "Windows usable memory",
+        "Usable memory",
         bytes(system.total_memory()),
         "",
         "sysinfo",
     ));
     for (label, value) in [
-        ("Windows", System::long_os_version()),
+        (crate::model::OS_NAME, System::long_os_version()),
         ("Build", System::os_version()),
         ("Host", System::host_name()),
     ] {
         if let Some(value) = value {
             result
                 .os
-                .push(Field::valid(label, value, "", "Windows / sysinfo"));
+                .push(Field::valid(label, value, "", SYSINFO_SOURCE));
         }
     }
     result.os.push(Field::valid(
         "System architecture",
         System::cpu_arch(),
         "",
-        "Windows / sysinfo",
+        SYSINFO_SOURCE,
     ));
     for disk in Disks::new_with_refreshed_list().list() {
         #[cfg(windows)]
@@ -114,11 +108,17 @@ pub fn discover() -> Inventory {
     result.diagnostics.push("Drive capacity/free space: GetDiskFreeSpaceEx values available to this user; per-user quotas can reduce these values. A failed query omits the drive and records its mount above instead of fabricating zero capacity.".into());
     #[cfg(windows)]
     windows::discover(&mut result);
+    #[cfg(target_os = "macos")]
+    macos::discover(&mut result);
     for (label, source, detail) in [
         (
             "Temperature",
             "CPU digital thermal sensors",
-            "Windows exposes no universal unprivileged CPU package sensor. Requires a supported, signed hardware access provider; none is bundled.",
+            if cfg!(target_os = "macos") {
+                "macOS exposes CPU temperature only to privileged tools such as powermetrics; none is bundled."
+            } else {
+                "Windows exposes no universal unprivileged CPU package sensor. Requires a supported, signed hardware access provider; none is bundled."
+            },
         ),
         (
             "Core voltage",
@@ -138,10 +138,62 @@ pub fn discover() -> Inventory {
             detail,
         ));
     }
+    #[cfg(not(target_os = "macos"))]
     result.memory.push(Field::missing("Channel mode", Availability::Unsupported, "Memory controller", "SMBIOS module positions do not establish active channel mode; no memory-controller provider is bundled."));
+    #[cfg(not(target_os = "macos"))]
     result.memory.push(Field::missing("SPD / timings / XMP / EXPO", Availability::Unsupported, "SPD / memory controller", "SMBIOS exposes module identification and transfer rates only. SPD profiles and active timings need supported SMBus / memory-controller access; no signed provider is bundled."));
     result.diagnostics.push("Discovery is read-only. CPUID cache descriptions describe the executing processor's cache topology. Firmware values may be incomplete or incorrect; their SMBIOS source remains visible.".into());
     result
+}
+
+const SYSINFO_SOURCE: &str = if cfg!(windows) {
+    "Windows / sysinfo"
+} else {
+    "sysinfo"
+};
+
+#[cfg(target_arch = "x86_64")]
+fn cpu_identity(fields: &mut Vec<Field>, _: &System) {
+    let cpuid = raw_cpuid::CpuId::new();
+    if let Some(brand) = cpuid.get_processor_brand_string() {
+        fields.push(Field::valid(
+            "Model",
+            brand.as_str().trim(),
+            "",
+            "CPUID brand string",
+        ));
+    }
+    if let Some(vendor) = cpuid.get_vendor_info() {
+        fields.push(Field::valid("Vendor", vendor.as_str(), "", "CPUID leaf 0"));
+    }
+}
+
+/// Without CPUID, such as on Apple silicon, the OS reports the processor name.
+#[cfg(not(target_arch = "x86_64"))]
+fn cpu_identity(fields: &mut Vec<Field>, system: &System) {
+    let cpu = system.cpus().first();
+    #[cfg(target_os = "macos")]
+    let brand = macos::brand().map(|brand| (brand, "sysctl machdep.cpu.brand_string"));
+    #[cfg(not(target_os = "macos"))]
+    let brand: Option<(String, &str)> = None;
+    let brand = brand.or_else(|| cpu.map(|cpu| (cpu.brand().trim().to_owned(), "sysinfo")));
+    if let Some((brand, source)) = brand.filter(|(brand, _)| !brand.is_empty()) {
+        fields.push(Field::valid("Model", brand, "", source));
+    }
+    if let Some(vendor) = cpu
+        .map(|cpu| cpu.vendor_id().trim())
+        .filter(|v| !v.is_empty())
+    {
+        fields.push(Field::valid("Vendor", vendor, "", "sysinfo"));
+    }
+    if let Some(mhz) = cpu.map(|cpu| cpu.frequency()).filter(|&mhz| mhz > 0) {
+        fields.push(Field::valid(
+            "Maximum nominal frequency",
+            mhz.to_string(),
+            "MHz",
+            "sysinfo; highest performance state, not measured",
+        ));
+    }
 }
 
 #[cfg(target_arch = "x86_64")]
@@ -322,9 +374,14 @@ pub struct Monitor {
     cpu: windows::CpuMonitor,
     #[cfg(windows)]
     gpu: windows::GpuMonitor,
+    #[cfg(target_os = "macos")]
+    gpu: macos::GpuMonitor,
 }
 impl Monitor {
-    pub fn new(inventory: &Inventory) -> Self {
+    pub fn new(
+        #[cfg_attr(not(any(windows, target_os = "macos")), allow(unused_variables))]
+        inventory: &Inventory,
+    ) -> Self {
         let mut system = System::new();
         system.refresh_cpu_all();
         system.refresh_memory();
@@ -336,6 +393,8 @@ impl Monitor {
             first: true,
             #[cfg(windows)]
             gpu: windows::GpuMonitor::new(&inventory.adapters),
+            #[cfg(target_os = "macos")]
+            gpu: macos::GpuMonitor::new(&inventory.adapters),
         }
     }
     pub fn sample(&mut self) -> Telemetry {
@@ -348,11 +407,11 @@ impl Monitor {
             if first {
                 Reading::missing(
                     "%",
-                    "Windows CPU times / sysinfo",
+                    "OS CPU times / sysinfo",
                     "Waiting for two CPU-time samples",
                 )
             } else {
-                Reading::valid(value as f64, "%", "Windows CPU times / sysinfo")
+                Reading::valid(value as f64, "%", "OS CPU times / sysinfo")
             }
         };
         #[cfg(not(windows))]
@@ -371,8 +430,8 @@ impl Monitor {
         #[cfg(not(windows))]
         let cpu_frequency = Reading::missing(
             "MHz",
-            "Windows processor power information",
-            "This provider requires Windows",
+            "Processor frequency",
+            "Current processor frequency is not read on this operating system",
         );
         #[cfg(not(windows))]
         let total = self.system.total_memory();
@@ -380,25 +439,21 @@ impl Monitor {
         let memory_total = if total == 0 {
             Reading::missing(
                 "bytes",
-                "GlobalMemoryStatusEx / sysinfo",
-                "Windows did not report usable memory",
+                "sysinfo",
+                "The operating system did not report usable memory",
             )
         } else {
-            Reading::valid(total as f64, "bytes", "GlobalMemoryStatusEx / sysinfo")
+            Reading::valid(total as f64, "bytes", "sysinfo")
         };
         #[cfg(not(windows))]
         let memory_used = if total == 0 {
             Reading::missing(
                 "bytes",
-                "GlobalMemoryStatusEx / sysinfo",
-                "Windows did not report usable memory",
+                "sysinfo",
+                "The operating system did not report usable memory",
             )
         } else {
-            Reading::valid(
-                self.system.used_memory() as f64,
-                "bytes",
-                "GlobalMemoryStatusEx / sysinfo",
-            )
+            Reading::valid(self.system.used_memory() as f64, "bytes", "sysinfo")
         };
         #[cfg(windows)]
         let (memory_used, memory_total) = windows::memory();
@@ -413,9 +468,9 @@ impl Monitor {
             memory_used,
             memory_total,
             cpu_frequency,
-            #[cfg(windows)]
+            #[cfg(any(windows, target_os = "macos"))]
             gpus: self.gpu.sample(),
-            #[cfg(not(windows))]
+            #[cfg(not(any(windows, target_os = "macos")))]
             gpus: Vec::new(),
         }
     }

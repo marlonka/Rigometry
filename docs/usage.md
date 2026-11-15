@@ -2,6 +2,21 @@
 
 [Back to Rigometry](../README.md)
 
+## Install on macOS
+
+Rigometry for Mac is one universal app for Apple silicon (M1 and later) and Intel Macs, macOS 11 Big Sur or later.
+
+1. Open [Releases](https://github.com/marlonka/Rigometry/releases/latest) and download `Rigometry-<version>-macos-universal.zip`.
+2. Double-click the ZIP in **Downloads**. Drag **Rigometry.app** from the extracted folder into **Applications**.
+3. Double-click Rigometry in Applications. Because the app is not notarized by Apple, macOS first shows a warning that it cannot verify the app. Click **Done** (or **OK**).
+4. Open **System Settings → Privacy & Security**, scroll to **Security** and click **Open Anyway** next to the message about Rigometry. Confirm with your password or Touch ID, then click **Open**.
+
+From then on, Rigometry opens normally. On macOS 14 Sonoma or earlier, you can instead Control-click the app, choose **Open** and confirm.
+
+To check the download first, open Terminal in the Downloads folder and run `shasum -a 256 -c Rigometry-<version>-macos-universal.zip.sha256` after downloading the `.sha256` file beside the ZIP. It should print `OK`.
+
+On a Mac, Rigometry shows CPU and memory activity, processor details, drives and the full storage analysis. **Show in Finder** replaces Explorer. GPU sensors, motherboard and RAM-module details, and **Scan as administrator** are Windows-only. Scans read whole folder listings on up to eight threads with `getattrlistbulk`, the macOS counterpart of the Windows folder listing, and open no file. Scanning `/` covers the startup disk once, including `/Users` and `/Applications` on the data volume, and does not enter other mounted volumes such as `/System/Volumes/Data`, `/Volumes` or `/dev`; scan those directly. Files stored only in iCloud count as cloud placeholders and are not downloaded. The first scan of Desktop, Documents or Downloads makes macOS ask whether Rigometry may access that folder. Folders macOS protects, such as Mail or Safari data, need **Full Disk Access** for Rigometry under **System Settings → Privacy & Security**; without it they count as refused, not as errors. Shortcuts use ⌘ instead of Ctrl, for example ⌘1 to ⌘4.
+
 ## Navigation
 
 | Action | Shortcut |
@@ -15,7 +30,7 @@ Settings includes dark/light/system themes, scale from 85–150% and reduced mot
 
 ## Language
 
-Choose **Settings → Language**: English, Deutsch, Français, Español or System language. Switching applies immediately and is saved for the next launch. System language follows the Windows display language, including regional variants; other languages fall back to English.
+Choose **Settings → Language**: English, Deutsch, Français, Español or System language. Switching applies immediately and is saved for the next launch. System language follows the Windows display language or the first preferred language in macOS, including regional variants; other languages fall back to English.
 
 Labels, dialogs opened by the app, status messages, diagnostics and command-line help use the selected language. Native Windows dialog controls and operating-system or driver error text follow their source language. Hardware names, paths, identifiers and standard unit symbols remain unchanged. Readings use decimal commas in German, French and Spanish.
 
@@ -40,7 +55,7 @@ Storage sizes are **On disk**: the clusters an entry occupies, which is what del
 
 Scans read folder listings and open no file, so files Windows keeps open exclusively, such as `pagefile.sys`, show their size too. Named data streams, such as the download markers Windows attaches to files from the internet, count only in administrator scans of a whole drive.
 
-Right-click any row or map tile to show it in Explorer, copy its path or open a folder; the folder button at the end of each row also shows the entry in Explorer.
+Right-click any row or map tile to show it in Explorer (Finder on a Mac), copy its path or open a folder; the folder button at the end of each row also shows the entry there.
 
 `≥` marks a known lower bound. Cancellation, inaccessible entries or a metadata limit can leave totals incomplete. Expand scan accounting to inspect exclusions and errors.
 

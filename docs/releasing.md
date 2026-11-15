@@ -28,7 +28,7 @@ Replace the example with the next actual version. Never reuse an existing tag.
 
 The CI workflow runs on branch and tag pushes. A version tag must match the manifest before the build proceeds. Formatting, Clippy, tests, native verification, package checks and dependency advisories must all pass.
 
-For tags, the workflow uploads the verified ZIP and its checksum to a **draft GitHub Release**. The package includes the executable, user guide, license inventory, original third-party notices and per-file checksums. Hardware reports and local audit logs are excluded.
+For tags, the workflow uploads the verified Windows and macOS ZIPs and their checksums to a **draft GitHub Release**. The package includes the executable, user guide, license inventory, original third-party notices and per-file checksums. Hardware reports and local audit logs are excluded.
 
 The build job has read-only repository access. A separate job receives release-write permission only after the checks pass. Third-party workflow actions are pinned to commit IDs.
 

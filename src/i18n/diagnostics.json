@@ -84,16 +84,16 @@
     "Esperando dos mediciones del tiempo de CPU"
   ],
   [
-    "This provider requires Windows",
-    "Diese Quelle benötigt Windows",
-    "Cette source nécessite Windows",
-    "Esta fuente requiere Windows"
+    "Current processor frequency is not read on this operating system",
+    "Die aktuelle Prozessorfrequenz wird auf diesem Betriebssystem nicht gelesen",
+    "La fréquence actuelle du processeur n’est pas lue sur ce système d’exploitation",
+    "La frecuencia actual del procesador no se lee en este sistema operativo"
   ],
   [
-    "Windows did not report usable memory",
-    "Windows meldete keinen nutzbaren Speicher",
-    "Windows n’a pas indiqué de mémoire utilisable",
-    "Windows no indicó memoria utilizable"
+    "The operating system did not report usable memory",
+    "Das Betriebssystem meldete keinen nutzbaren Speicher",
+    "Le système d’exploitation n’a pas indiqué de mémoire utilisable",
+    "El sistema operativo no indicó memoria utilizable"
   ],
   [
     "Module manufacturer ID 04 EF (JEDEC bank 5, code EF); firmware manufacturer name missing",
@@ -730,6 +730,18 @@
     "Analysemetadaten erreichten das Speicherbudget von 1,5 GiB; übrige Einträge wurden nicht erfasst. Zum Fortfahren einen kleineren Ordner analysieren.",
     "Les métadonnées ont atteint le budget de 1,5 GiB ; les éléments restants n’ont pas été analysés. Analysez un dossier plus petit.",
     "Los metadatos alcanzaron el presupuesto de 1,5 GiB; no se analizaron las entradas restantes. Analiza una carpeta más pequeña."
+  ],
+  [
+    "{0} mount points of other volumes were not entered, such as /System/Volumes/Data, /Volumes and /dev; scan those directly.",
+    "{0} Einhängepunkte anderer Volumes wurden nicht betreten, etwa /System/Volumes/Data, /Volumes und /dev; diese direkt scannen.",
+    "{0} points de montage d’autres volumes n’ont pas été parcourus, comme /System/Volumes/Data, /Volumes et /dev ; analysez-les directement.",
+    "{0} puntos de montaje de otros volúmenes no se recorrieron, como /System/Volumes/Data, /Volumes y /dev; analícelos directamente."
+  ],
+  [
+    "Mount point of another volume; not entered",
+    "Einhängepunkt eines anderen Volumes; nicht betreten",
+    "Point de montage d’un autre volume ; non parcouru",
+    "Punto de montaje de otro volumen; no recorrido"
   ],
   [
     "Reparse point excluded; target not followed",
