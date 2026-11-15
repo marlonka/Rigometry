@@ -668,10 +668,10 @@ fn cancelling_and_restarting_keeps_queued_old_results_out_of_new_scan() {
     assert!(!state.summary.as_ref().unwrap().cancelled);
     assert_eq!(state.nodes.len(), 2);
     assert_eq!(state.nodes[0].logical, 17);
-    assert!(
-        (0..state.nodes.len())
-            .all(|id| crate::storage::node_path(&state.nodes, id).starts_with(new.path()))
-    );
+    assert!((0..state.nodes.len()).all(|id| {
+        crate::storage::node_path(&state.nodes, id)
+            .starts_with(crate::storage::tests::scanned(new.path()))
+    }));
     assert!(state.nodes.iter().any(|n| n.name == "new-only.txt"));
     assert!(!state.nodes.iter().any(|n| n.name.starts_with("old-")));
 }

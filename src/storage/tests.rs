@@ -25,6 +25,15 @@ fn collect_scan(path: &Path) -> (Vec<ScanNode>, ScanSummary) {
     }
 }
 
+/// The root path a scan reports: macOS resolves system links such as `/var`.
+pub(crate) fn scanned(path: &Path) -> PathBuf {
+    if cfg!(unix) {
+        path.canonicalize().unwrap()
+    } else {
+        path.to_path_buf()
+    }
+}
+
 #[test]
 fn scan_preserves_unicode_empty_directories_and_unique_hardlink_allocation() {
     let fixture = tempfile::tempdir().unwrap();
@@ -55,7 +64,7 @@ fn scan_preserves_unicode_empty_directories_and_unique_hardlink_allocation() {
     assert_eq!(aliases.iter().filter(|n| n.allocated == 0).count(), 1);
     assert!(aliases.iter().any(|n| n.note.contains("Hard-link alias")));
     // Nodes keep names only; their full paths are rebuilt from the root.
-    assert_eq!(super::node_path(&nodes, 0), fixture.path());
+    assert_eq!(super::node_path(&nodes, 0), scanned(fixture.path()));
     for node in &nodes[1..] {
         let path = super::node_path(&nodes, node.id);
         assert_eq!(path.is_dir(), node.is_dir, "{path:?}");
