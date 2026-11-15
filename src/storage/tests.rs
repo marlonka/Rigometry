@@ -119,6 +119,23 @@ fn hardlink_count_changes_never_double_count_physical_bytes() {
     }
 }
 
+#[cfg(unix)]
+#[test]
+fn system_links_in_ancestors_are_resolved_but_a_linked_root_is_not_followed() {
+    let fixture = tempfile::tempdir().unwrap();
+    let real = fixture.path().join("real");
+    fs::create_dir_all(real.join("sub")).unwrap();
+    fs::write(real.join("sub").join("file.bin"), vec![1u8; 4096]).unwrap();
+    std::os::unix::fs::symlink(&real, fixture.path().join("link")).unwrap();
+    // A linked ancestor, as /var is on macOS, still scans the folder below it.
+    let (nodes, summary) = collect_scan(&fixture.path().join("link").join("sub"));
+    assert_eq!(summary.errors, 0, "{:?}", summary.notes);
+    assert!(nodes.iter().any(|node| node.name == "file.bin"));
+    // The scanned root itself being a link is never followed.
+    let (nodes, _) = collect_scan(&fixture.path().join("link"));
+    assert!(!nodes.iter().any(|node| node.name == "file.bin"));
+}
+
 #[test]
 fn missing_root_reports_error_instead_of_empty_success() {
     let fixture = tempfile::tempdir().unwrap();

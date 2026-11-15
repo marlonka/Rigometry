@@ -764,7 +764,24 @@ fn checked_path(path: &Path) -> Result<PathBuf, String> {
     let path = std::path::absolute(path).map_err(|e| e.to_string())?;
     #[cfg(windows)]
     native::validate_path(&path)?;
+    #[cfg(not(windows))]
+    let path = resolved_parent(path);
     Ok(path)
+}
+
+/// macOS keeps `/var`, `/tmp` and `/etc` as system symbolic links into
+/// `/private`. The typed path's folder is resolved once, so the later
+/// ancestor check refuses links that appear afterwards, not the system's own.
+/// The final component is never resolved: a link there is still excluded.
+#[cfg(not(windows))]
+fn resolved_parent(path: PathBuf) -> PathBuf {
+    match (path.parent(), path.file_name()) {
+        (Some(parent), Some(name)) => match fs::canonicalize(parent) {
+            Ok(parent) => parent.join(name),
+            Err(_) => path, // The ancestor check reports the missing folder.
+        },
+        _ => path,
+    }
 }
 
 /// Windows resolves `C:` and `C:folder` against a hidden per-drive current

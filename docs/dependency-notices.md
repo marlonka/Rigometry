@@ -40,7 +40,7 @@ The Rust standard library is outside Cargo.lock; its [original notices](toolchai
 | [byteorder-lite](https://crates.io/crates/byteorder-lite/0.1.0) | 0.1.0 | Transitive | Unlicense OR MIT | LICENSE-MIT |
 | [cfg-if](https://crates.io/crates/cfg-if/1.0.5) | 1.0.5 | Transitive | MIT OR Apache-2.0 | LICENSE-APACHE, LICENSE-MIT |
 | [cfg_aliases](https://crates.io/crates/cfg_aliases/0.2.2) | 0.2.2 | Transitive | MIT | LICENSE, NOTICES.md |
-| [clipboard-win](https://crates.io/crates/clipboard-win/5.4.1) | 5.4.1 | Transitive | BSL-1.0 | upstream license supplement |
+| [clipboard-win](https://crates.io/crates/clipboard-win/5.4.3) | 5.4.3 | Transitive | BSL-1.0 | upstream license supplement |
 | [color](https://crates.io/crates/color/0.3.3) | 0.3.3 | Transitive | Apache-2.0 OR MIT | LICENSE-APACHE, LICENSE-MIT |
 | [crc32fast](https://crates.io/crates/crc32fast/1.5.2) | 1.5.2 | Transitive | MIT OR Apache-2.0 | LICENSE-APACHE, LICENSE-MIT |
 | [crossbeam-channel](https://crates.io/crates/crossbeam-channel/0.5.15) | 0.5.15 | Direct | MIT OR Apache-2.0 | LICENSE-APACHE, LICENSE-MIT, LICENSE-THIRD-PARTY |
@@ -272,4 +272,4 @@ The objc2 framework crates are derived from Apple SDK headers; see their upstrea
 | [objc2-io-surface](https://crates.io/crates/objc2-io-surface/0.3.2) | 0.3.2 | Transitive, macOS only | Zlib OR Apache-2.0 OR MIT | upstream license supplement |
 | [objc2-metal](https://crates.io/crates/objc2-metal/0.2.2) | 0.2.2 | Transitive, macOS only | MIT | upstream license supplement |
 | [objc2-quartz-core](https://crates.io/crates/objc2-quartz-core/0.2.2) | 0.2.2 | Transitive, macOS only | MIT | upstream license supplement |
-| [rustix](https://crates.io/crates/rustix/1.1.5) | 1.1.5 | Transitive, macOS only | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT | LICENSE-MIT, COPYRIGHT |
+| [rustix](https://crates.io/crates/rustix/1.1.6) | 1.1.6 | Transitive, macOS only | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT | LICENSE-MIT, COPYRIGHT |

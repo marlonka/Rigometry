@@ -1202,8 +1202,8 @@ The `cfg_aliases!` macro uses a lot of the code from [`tectonic_cfg_support::tar
 ---
 
 ========================================================================
-clipboard-win 5.4.1 — upstream license supplement
-Source: https://raw.githubusercontent.com/DoumanAsh/clipboard-win/3b27cf2bfd1adcfa6e0264eb51c1025ddaf0f342/LICENSE
+clipboard-win 5.4.3 — upstream license supplement
+Source: https://raw.githubusercontent.com/DoumanAsh/clipboard-win/ed27008ae5d1f10cfbb266de039f0fb35fd05a56/LICENSE
 error-code 3.4.0 — LICENSE
 Source: https://crates.io/crates/error-code/3.4.0
 ryu 1.0.23 — LICENSE-BOOST
@@ -8318,8 +8318,8 @@ accesskit_consumer 0.38.0 — upstream license supplement
 Source: https://raw.githubusercontent.com/AccessKit/accesskit/c88605b96d04431f9c3c792464a0f2f253480e94/LICENSE-MIT
 accesskit_macos 0.26.3 — upstream license supplement
 Source: https://raw.githubusercontent.com/AccessKit/accesskit/c88605b96d04431f9c3c792464a0f2f253480e94/LICENSE-MIT
-rustix 1.1.5 — LICENSE-MIT
-Source: https://crates.io/crates/rustix/1.1.5
+rustix 1.1.6 — LICENSE-MIT
+Source: https://crates.io/crates/rustix/1.1.6
 
 Permission is hereby granted, free of charge, to any
 person obtaining a copy of this software and associated
@@ -8663,8 +8663,8 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ========================================================================
-rustix 1.1.5 — COPYRIGHT
-Source: https://crates.io/crates/rustix/1.1.5
+rustix 1.1.6 — COPYRIGHT
+Source: https://crates.io/crates/rustix/1.1.6
 
 Short version for non-lawyers:
 
