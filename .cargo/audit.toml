@@ -1,0 +1,13 @@
+# cargo audit configuration. Every ignored advisory needs a reason and is
+# reviewed at each release.
+[advisories]
+ignore = [
+    # zbus_names, zvariant and zvariant_derive are unmaintained (merged into
+    # zbus 6); no patched release exists. They reach the lockfile only through
+    # accesskit_unix, eframe's Linux screen-reader support, and are never
+    # compiled for the Windows or macOS releases. Remove once accesskit moves
+    # to zbus 6. Approved by the maintainer on 2026-11-15.
+    "RUSTSEC-2026-0370",
+    "RUSTSEC-2026-0371",
+    "RUSTSEC-2026-0372",
+]
