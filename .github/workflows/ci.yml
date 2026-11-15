@@ -277,7 +277,7 @@ jobs:
           if (-not $section.Success) { throw 'Changelog entry missing for release tag.' }
           $notes = $section.Groups[1].Value.Trim()
           $notes += "`n`n**Windows:** Windows 11 on Intel/AMD x64. Native ARM64 and 32-bit systems are not supported. Intel hardware is not yet physically verified; GPU sensors depend on drivers."
-          $notes += "`n`n**macOS:** universal app for Apple silicon and Intel Macs, macOS 11 or later. GPU sensors, firmware details and administrator scans are Windows-only. [Install on a Mac](https://github.com/marlonka/Rigometry/blob/$env:RELEASE_TAG/docs/usage.md#install-on-macos)"
+          $notes += "`n`n**macOS:** universal app for Apple silicon and Intel Macs, macOS 11 or later. Live GPU utilization, chip, cores, memory and model details come from macOS; CPU and GPU temperatures on Apple silicon and **Scan as administrator** are not available. The app is not notarized: macOS asks once for confirmation. [Install on a Mac](https://github.com/marlonka/Rigometry/blob/$env:RELEASE_TAG/docs/usage.md#install-on-macos)"
           $notes += "`n`nPortable, unsigned builds. Extract the ZIP with its license files. Check the adjacent SHA-256 before use."
           $notes += "`n`nSource: $env:GITHUB_SHA`nBuild: https://github.com/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID`n"
           [IO.File]::WriteAllText('release-notes.md', $notes)
