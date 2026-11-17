@@ -23,7 +23,7 @@ On a Mac, Rigometry shows CPU and memory activity, processor details, drives and
 | --- | --- |
 | Overview, CPU & Memory, GPU, Storage | `Ctrl+1` through `Ctrl+4` |
 | Rescan the current storage path | `F5` |
-| Cancel a storage scan | `Esc` |
+| Cancel a storage scan or duplicate search | `Esc` (after leaving a text field or menu) |
 | Parent storage folder | `Alt+Up` |
 
 Settings includes dark/light/system themes, scale from 85–150% and reduced motion. At smaller window sizes, sections stack and the page scrolls vertically.
@@ -49,7 +49,7 @@ Byte values use binary units consistently:
 
 Decimal kB/MB/GB/TB use powers of 1000 instead. For example, 32 GiB is approximately 34.36 GB; changing only the suffix would mislabel the value. Uppercase **B** means bytes; lowercase **b** means bits. These are the standard [binary prefixes documented by NIST](https://physics.nist.gov/cuu/Units/binary.html).
 
-Installed RAM is firmware capacity. Memory available to Windows may be smaller; memory in use is a live operating-system reading. These are separate measurements.
+Installed RAM is firmware capacity. Memory available to the operating system may be smaller; memory in use is a live operating-system reading. These are separate measurements.
 
 Storage sizes are **On disk**: the clusters an entry occupies, which is what deleting it frees. Each file identity counts once, attributed to the first scanned hard-link path. **File size** (the sum of file lengths, including named streams and every hard-link path) appears for the selected entry, in tooltips and in exports; the page shows it for the current folder only where it differs noticeably, for example for NTFS-compressed Windows folders. Directory indexes, filesystem metadata and other volume bookkeeping are excluded. Drive usage and scan allocation answer different questions.
 
@@ -80,7 +80,21 @@ The **Search** field on the Storage page searches every entry below the current 
 
 Size suffixes follow [the units above](#units-and-accounting): `k`, `m`, `g`, `t` and `kib`…`tib` are binary, as shown in the table; `kb`, `mb`, `gb`, `tb` are decimal. `size:` on a folder uses its total size on disk, so `kind:dir size:>10g` finds large folders. An invalid filter value is reported below the field.
 
-Search runs on the scan already in memory: it never reads the disk, so it only finds what the current scan includes. Scoring and query syntax are adapted from [FSearch](https://github.com/noahdunnagan/fsearch) (MIT).
+Search runs on the scan already in memory: it never reads the disk, so it only finds what the current scan includes. Repeated filters narrow each other: `size:>1g size:<4g` finds sizes between the two. On a Mac, a pasted absolute path such as `/Users/me/Projects` works like `path:`. Scoring and query syntax are adapted from [FSearch](https://github.com/noahdunnagan/fsearch) (MIT).
+
+## Duplicate files
+
+After a scan, open **Duplicates** on the Storage page, choose the **Smallest file** to compare and click **Find duplicates**. Rigometry compares the files below the current folder; nothing is changed or deleted, and the scan itself still opens no file.
+
+- **Copies have identical contents.** Only files of equal size are read. Rigometry first hashes the first and last 16 KiB of each, then reads in full only the files that still match another, and compares them by [BLAKE3](https://github.com/BLAKE3-team/BLAKE3) hash. Equal hashes mean equal contents; names, dates and folders play no part.
+- **The biggest savings come first.** Groups appear as they are confirmed, sorted by the space keeping one copy would free. The oldest copy, likely the original, is listed first; hover a copy for its full path.
+- **Hard links are not copies.** Further names of one file are counted once and free nothing. On a Mac, clones that share storage on APFS count only their unshared part.
+- **Use the search to narrow the list.** `ext:jpg` shows only groups with a JPEG copy; the other filters work as described above.
+- **Changed files are left out.** A file that changed, moved or became a link since the scan, or while it was read, is not reported and is counted under **Comparison details**. So are files that could not be read.
+- **Cloud files stay in the cloud.** Files stored only in OneDrive or iCloud are skipped and never downloaded. On a Mac, comparing does not change files' access times.
+- **Export the result** as CSV or JSON: each copy with its path, size, BLAKE3 hash and modification time.
+
+Rigometry reads one file at a time on hard disks and several at once on SSDs. Reading is limited by the drive: expect roughly the drive's sequential speed for the files that need a full read. Windows may update the last-access time of files it reads where that feature is enabled. On ReFS volumes, such as Dev Drives, copies can already share blocks, so deleting one may free less than shown.
 
 ## Sensors
 
@@ -90,7 +104,11 @@ Choose the GPU adapter before comparing readings. Device-wide usage/capacity and
 
 ## Command line
 
-Use `--help` for options and `--version` for the build version. Output parent directories must exist; output files must have new names. Existing files and aliases are not intentionally replaced. `.csv` selects CSV regardless of case; other export extensions select JSON.
+Use `--help` for options and `--version` for the build version. Output parent directories must exist; output files must have new names, and every output is checked before any work starts. Existing files and aliases are not intentionally replaced. `.csv` selects CSV regardless of case; other export extensions select JSON.
+
+The exit code is 0 on success and 1 on any error, including a scan whose folder cannot be read. Partial results, such as folders that needed administrator rights, still succeed; their `status` field says `partial`.
+
+The Windows release is a desktop application, so PowerShell does not wait for it. To wait and read the exit code, start it with `Start-Process -Wait -NoNewWindow -PassThru` and check `.ExitCode`. On a Mac, run `Rigometry.app/Contents/MacOS/rigometry` from Terminal.
 
 ```powershell
 New-Item -ItemType Directory -Force .\artifacts | Out-Null
@@ -102,6 +120,9 @@ New-Item -ItemType Directory -Force .\artifacts | Out-Null
 .\target\release\rigometry.exe --headless --scan 'C:\Data' --export .\artifacts\scan.json
 .\target\release\rigometry.exe --headless --scan 'C:\Data' --export .\artifacts\scan.csv
 
+# Duplicate files of at least 4 MiB below a folder (default 1 MiB).
+.\target\release\rigometry.exe --headless --scan 'C:\Data' --duplicates .\artifacts\copies.csv --min-size 4m
+
 # Open the desktop app and begin scanning.
 .\target\release\rigometry.exe --scan 'C:\Data'
 ```
@@ -110,7 +131,7 @@ Exports contain paths and hardware details. Review before sharing. Concurrent fi
 
 ## Screenshots
 
-Capture mode renders five application views, then closes. It requires a Windows graphics session and new output names:
+Capture mode renders five application views, then closes. It requires a graphics session and new output names:
 
 ```powershell
 .\target\release\rigometry.exe --capture .\artifacts\screenshots --scan .\src

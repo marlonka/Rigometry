@@ -44,7 +44,7 @@ Translation catalogs in `src/i18n/` contain rows of `[English source, German, Fr
 
 The release verification script builds the app, writes a native hardware report and scans a controlled Unicode fixture. Outputs stay in ignored `artifacts/`. It stops only its own child processes.
 
-CI runs formatting, Clippy, tests, release verification, package verification and a RustSec advisory check on Windows, and Clippy for both Mac architectures, tests, packaging and a headless report and scan of the packaged app on macOS. Tagged builds additionally prepare a draft GitHub Release. Native hardware accuracy, Narrator and mixed-DPI behavior require manual verification.
+CI runs formatting, Clippy, tests, release verification and package verification on Windows, a RustSec advisory check on Linux, and Clippy for both Mac architectures, tests, packaging and a headless report and scan of the packaged app on macOS. Tagged builds additionally prepare a draft GitHub Release. Native hardware accuracy, Narrator and mixed-DPI behavior require manual verification.
 
 Two compatibility jobs rerun the release verification on the built executable:
 

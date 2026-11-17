@@ -1,22 +1,24 @@
 # Rigometry architecture
 
-Rust 2024, Windows 11 x64, eframe/egui 0.34.3 with Glow and AccessKit. `Cargo.lock` and exact direct dependency versions define the build. Windows APIs and an optionally installed NVIDIA runtime supply real data; there is no web frontend, account service, telemetry backend, or bundled hardware driver.
+Rust 2024, Windows 11 x64 and macOS 11 or later, eframe/egui 0.34.3 with Glow and AccessKit. `Cargo.lock` and exact direct dependency versions define the build. Windows APIs and an optionally installed NVIDIA runtime supply real data; there is no web frontend, account service, telemetry backend, or bundled hardware driver.
 
 ## Modules and ownership
 
 | Module | Responsibility |
 | --- | --- |
-| `main.rs` | Native window and CLI entry points; headless hardware report/scan/export; optional native screenshot capture |
+| `main.rs` | Native window and CLI entry points; headless hardware report, scan, export and duplicate report |
 | `model.rs` | Hardware inventory and timestamped readings; explicit availability states and binary byte formatting |
 | `hardware.rs` | CPUID inventory and provider composition |
 | `hardware/smbios.rs` | Bounded firmware-table parser; board/BIOS/module records and sentinel handling |
 | `hardware/windows.rs` | Native CPU times/memory, DXGI identities, WDDM counters and D3DKMT queries |
+| `hardware/macos.rs` | sysctl, system_profiler and IOKit accelerator statistics, with host-independent parsers |
 | `hardware/nvml.rs` | Runtime loading, exact PCI matching and individual NVIDIA sensor calls |
-| `storage.rs` and `storage/*` | Read-only metadata traversal: parallel folder listings, NTFS master file table reader, accounting, cancellation and exports |
+| `storage.rs` and `storage/*` | Read-only metadata traversal: parallel folder listings (`listing.rs` on Windows, `bulk.rs` with `getattrlistbulk` on macOS), NTFS master file table reader, accounting, cancellation and exports |
+| `storage/duplicates.rs` | On-request content comparison of a finished scan: size groups, hard-link identities, sampled and full BLAKE3 hashes, drive-aware reader threads and duplicate exports |
 | `state.rs` | Worker messages, bounded history, scan aggregation, navigation, filtering/sorting and background dialogs/exports |
 | `search.rs` | Storage search: query syntax, typo-tolerant ranking and a linear pass over the scan tree with per-scan name masks (adapted from FSearch, MIT) |
-| `ui.rs` | Native pages, virtual table, charts/treemap, copy/reveal actions, settings and screenshot handling |
-| `i18n.rs` and `i18n/*.json` | Presentation translations, Windows language detection and locale-specific number formatting; exports remain language-independent |
+| `ui.rs` | Native pages, virtual tables, charts/treemap, duplicates view, copy/reveal actions, settings and screenshot capture |
+| `i18n.rs` and `i18n/*.json` | Presentation translations, Windows and macOS language detection and locale-specific number formatting; exports remain language-independent |
 
 ## Work and memory bounds
 
@@ -24,7 +26,7 @@ The hardware worker discovers inventory once, then samples about once per second
 
 Rendering runs independently from acquisition. Live chart views request a repaint about every 33 milliseconds for timestamp-based panning; this neither samples hardware at 30 Hz nor creates extra readings. Reduced motion disables core-bar interpolation and uses a lower periodic repaint rate. Fixed numeric columns and reserved scrollbar space prevent routine data changes from shifting adjacent controls.
 
-Each storage scan owns its worker, cancellation flag and receiver. Metadata nodes arrive in batches of up to 256 through a capacity-nine queue, reserving room for completion. The UI consumes scan events for up to eight milliseconds per update and throttles visible-index rebuilding to 400 milliseconds during active scans; typing, sorting and expanding rebuild on the next frame. A replacement scan gets a fresh receiver, preventing old batches from attaching to the new tree.
+Each storage scan owns its worker, cancellation flag and receiver. Workers wake the UI whenever they queue results, so draining does not wait for the next periodic repaint. Metadata nodes arrive in batches of up to 256 through a capacity-nine queue, reserving room for completion. The UI consumes scan events for up to eight milliseconds per update and throttles visible-index rebuilding to 400 milliseconds during active scans; typing, sorting and expanding rebuild on the next frame. A replacement scan gets a fresh receiver, preventing old batches from attaching to the new tree.
 
 Search makes one pass in ID order, where parents precede children, so folder words propagate without building paths; only folders keep per-word state. Each name's character-class mask is computed once per scan and extended as entries arrive, so most names are rejected without decoding. `path:` filters build each folder's path once and extend it per entry. On a real 3.2-million-entry drive (release build), queries take 22–121 ms at p50, after a one-time 67 ms mask build; see [benchmarks](benchmarks.md). Results and sorting still run on the UI thread.
 
@@ -38,6 +40,7 @@ Nodes occupy a flat vector with parent/child IDs. Aggregate totals add owned byt
 - Logical storage bytes count each hard-link path. Allocated bytes count each file identity once across the scan, attributed to the first encountered path. Nested scopes preserve this attribution.
 - Standard scans count each file's main data stream; administrator scans of whole drives also count named streams and restore points in System Volume Information. Directory indexes and MFT/security/journal overhead are always excluded. Volume used space and scan allocation therefore answer different questions.
 - Standard scans read folder listings (`FileIdExtdDirectoryInfo`, falling back to older classes on FAT and network drives): one query returns name, sizes, attributes and file ID for many entries, so no file is opened. Eight threads list folders; the scan thread numbers entries and deduplicates hard links, so IDs stay append-only and parents precede children. Each folder is reopened by path and checked on its handle before listing, so a folder replaced by a junction is not followed. Listing records are parsed with bounds checks, and names containing separators or stream syntax are rejected.
+- Duplicate searches read contents only when the user starts one, on a finished scan. Files of equal logical size are opened once to hash their first and last 16 KiB together; groups that still match are read in full in 1 MiB blocks. BLAKE3 is built Rust-only (`pure`), with run-time SIMD selection. Each open checks the handle, not the listed name: not a directory, link or cloud placeholder (Windows: no recall, CompactOS reopened through its filter with the same file ID; macOS: `O_NOFOLLOW_ANY`, dataless materialization and access-time updates off per reader thread), the scanned size, and on later reads the same identity, size, write and change time. A full read must end exactly at the size with the stamps unchanged. Paths of one file identity are one copy; freeable bytes are zero while other hard links remain and use APFS's private size where reported. Readers: one per hard disk, two to four for unknown or network drives, up to eight for sampling on SSDs (Windows seek-penalty query, macOS `diskutil`). Memory is proportional to candidate files; results reference node IDs and are dropped with the scan.
 - Reparse points and cloud placeholders are excluded; handles request no recall and no following. Errors, cancellation and exclusions remain in summaries/exports. Incomplete totals are lower bounds, not exact totals.
 - Whole-drive scans with administrator rights read the NTFS master file table directly, unbuffered, in 4 MiB blocks that several threads read and parse. Names, folders and sizes come from file records; allocation is the sum of each data stream's non-sparse runs, so compressed, sparse and CompactOS files are exact, and no file is opened. Records whose fixups disagree were read mid-write and are read again. Every offset is bounds-checked; a volume the parser cannot handle, a non-NTFS drive or missing rights fall back to normal enumeration before any node is emitted. Folder scans always enumerate, since they would still read the whole table.
 

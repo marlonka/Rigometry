@@ -30,11 +30,12 @@ As administrator, Rigometry reads the NTFS master file table directly. Without a
 - **Watch live activity:** CPU and memory utilization, per-thread CPU activity, GPU utilization and available temperatures, with a 120-second history.
 - **Inspect hardware:** processor and cache details, RAM modules, motherboard, BIOS and graphics adapters.
 - **Find large files and folders:** scan a whole drive in seconds, with or without administrator rights, browse a sortable hierarchy and size map, search millions of entries with typo-tolerant ranking and `ext:`/`size:` filters, show any entry in Explorer and export CSV or JSON.
+- **Find duplicate files:** compare the files of a scanned folder by content (BLAKE3), biggest savings first, without counting hard links or downloading cloud files. Read-only: nothing is deleted. [How it works](docs/usage.md#duplicate-files)
 - **Check storage accounting:** size on disk and file size, hard links, named streams, exclusions and partial results.
 - **Use the interface or command line:** dark/light themes, adjustable text size, reduced motion, hardware reports and automated scans.
 - **Choose your language:** English, Deutsch, Français or Español. The app follows the Windows or macOS language by default; change it in Settings without restarting.
 
-Hardware queries and scans are read-only. No account, telemetry upload or bundled driver; administrator rights are requested only when you choose **Scan as administrator**. Settings are saved locally; reports and exports are created when requested.
+Hardware queries, scans and duplicate searches are read-only. No account, telemetry upload or bundled driver; administrator rights are requested only when you choose **Scan as administrator**. Settings are saved locally; reports and exports are created when requested.
 
 <details>
 <summary>More screenshots</summary>

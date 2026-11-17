@@ -1,12 +1,12 @@
 # Dependency license inventory
 
-Generated 2026-10-04 from the pinned Cargo.lock using:
+Generated 2026-10-04 and updated 2026-11-17 from the pinned Cargo.lock using:
 
 ```powershell
 cargo metadata --locked --offline --format-version 1 --filter-platform x86_64-pc-windows-msvc
 ```
 
-202 resolved dependency package versions for Windows x86-64, including build/test dependencies. This is a Cargo metadata inventory; it is not a claim that every resolved package is linked into the release executable. All reported packages have a license expression.
+210 resolved dependency package versions for Windows x86-64, including build/test dependencies. This is a Cargo metadata inventory; it is not a claim that every resolved package is linked into the release executable. All reported packages have a license expression.
 
 Application code: MIT. For dual-licensed dependencies use a permissive offered branch, such as MIT or Apache-2.0. In particular, self_cell offers Apache-2.0 OR GPL-2.0-only; choose Apache-2.0. License expressions with AND require all listed components, including embedded-font and Unicode notices.
 
@@ -17,6 +17,7 @@ The Rust standard library is outside Cargo.lock; its [original notices](toolchai
 - Include the application LICENSE, this inventory, and bundled third-party license texts with the portable package.
 - Default egui fonts are separate assets: Hack (MIT/Bitstream Vera terms), Noto Emoji (OFL), Ubuntu (Ubuntu Font Licence), and emoji-icon-font (MIT). Preserve the font notices even when system fonts override the defaults.
 - ICU and Unicode data use Unicode-3.0 notices; unicode-ident also includes Unicode terms alongside its Rust-code license.
+- blake3 is built with its `pure` feature: Rust code only, no C or assembler sources; choose its Apache-2.0 or CC0-1.0 branch.
 - `src/search.rs` adapts name scoring, typo tolerance and query syntax from FSearch (MIT, Noah Dunnagan). It is source adaptation, not a Cargo dependency; its license text is included in third-party-licenses.txt.
 - Cargo metadata licenses do not cover separately loaded installed NVIDIA/AMD/Intel drivers. No vendor driver binary is bundled. The NVML ABI notice is included in third-party-licenses.txt separately from Rust package notices.
 - Original license/notice texts from cached crates and exact upstream commits are collected in third-party-licenses.txt. Identical text is included once with all associated packages. Upstream supplements cover workspace-published crates whose crates.io archive omits root license files; font and generated-binding notices are retained.
@@ -35,13 +36,17 @@ The Rust standard library is outside Cargo.lock; its [original notices](toolchai
 | [arrayvec](https://crates.io/crates/arrayvec/0.7.8) | 0.7.8 | Transitive | MIT OR Apache-2.0 | LICENSE-APACHE, LICENSE-MIT |
 | [autocfg](https://crates.io/crates/autocfg/1.5.1) | 1.5.1 | Transitive | Apache-2.0 OR MIT | LICENSE-APACHE, LICENSE-MIT |
 | [bitflags](https://crates.io/crates/bitflags/2.13.2) | 2.13.2 | Transitive | MIT OR Apache-2.0 | LICENSE-APACHE, LICENSE-MIT |
+| [blake3](https://crates.io/crates/blake3/1.8.7) | 1.8.7 | Direct | CC0-1.0 OR Apache-2.0 OR Apache-2.0 WITH LLVM-exception | LICENSE_A2, LICENSE_A2LLVM, LICENSE_CC0 |
 | [bytemuck](https://crates.io/crates/bytemuck/1.25.2) | 1.25.2 | Transitive | Zlib OR Apache-2.0 OR MIT | LICENSE-APACHE, LICENSE-MIT, LICENSE-ZLIB |
 | [bytemuck_derive](https://crates.io/crates/bytemuck_derive/1.12.1) | 1.12.1 | Transitive | Zlib OR Apache-2.0 OR MIT | LICENSE-APACHE, LICENSE-MIT, LICENSE-ZLIB |
 | [byteorder-lite](https://crates.io/crates/byteorder-lite/0.1.0) | 0.1.0 | Transitive | Unlicense OR MIT | LICENSE-MIT |
+| [cc](https://crates.io/crates/cc/1.6.0) | 1.6.0 | Transitive | MIT OR Apache-2.0 | LICENSE-APACHE, LICENSE-MIT |
 | [cfg-if](https://crates.io/crates/cfg-if/1.0.5) | 1.0.5 | Transitive | MIT OR Apache-2.0 | LICENSE-APACHE, LICENSE-MIT |
 | [cfg_aliases](https://crates.io/crates/cfg_aliases/0.2.2) | 0.2.2 | Transitive | MIT | LICENSE, NOTICES.md |
 | [clipboard-win](https://crates.io/crates/clipboard-win/5.4.3) | 5.4.3 | Transitive | BSL-1.0 | upstream license supplement |
 | [color](https://crates.io/crates/color/0.3.3) | 0.3.3 | Transitive | Apache-2.0 OR MIT | LICENSE-APACHE, LICENSE-MIT |
+| [constant_time_eq](https://crates.io/crates/constant_time_eq/0.4.2) | 0.4.2 | Transitive | CC0-1.0 OR MIT-0 OR Apache-2.0 | LICENSE-APACHE, LICENSE-CC0, LICENSE-MIT0 |
+| [cpufeatures](https://crates.io/crates/cpufeatures/0.3.1) | 0.3.1 | Transitive | MIT OR Apache-2.0 | LICENSE-APACHE, LICENSE-MIT |
 | [crc32fast](https://crates.io/crates/crc32fast/1.5.2) | 1.5.2 | Transitive | MIT OR Apache-2.0 | LICENSE-APACHE, LICENSE-MIT |
 | [crossbeam-channel](https://crates.io/crates/crossbeam-channel/0.5.15) | 0.5.15 | Direct | MIT OR Apache-2.0 | LICENSE-APACHE, LICENSE-MIT, LICENSE-THIRD-PARTY |
 | [crossbeam-utils](https://crates.io/crates/crossbeam-utils/0.8.23) | 0.8.23 | Transitive | MIT OR Apache-2.0 | LICENSE-APACHE, LICENSE-MIT |
@@ -70,11 +75,13 @@ The Rust standard library is outside Cargo.lock; its [original notices](toolchai
 | [fax](https://crates.io/crates/fax/0.2.7) | 0.2.7 | Transitive | MIT | LICENSE |
 | [fdeflate](https://crates.io/crates/fdeflate/0.3.7) | 0.3.7 | Transitive | MIT OR Apache-2.0 | LICENSE-APACHE, LICENSE-MIT |
 | [fearless_simd](https://crates.io/crates/fearless_simd/0.3.0) | 0.3.0 | Transitive | Apache-2.0 OR MIT | LICENSE-APACHE, LICENSE-MIT |
+| [find-msvc-tools](https://crates.io/crates/find-msvc-tools/0.1.14) | 0.1.14 | Transitive | MIT OR Apache-2.0 | LICENSE-APACHE, LICENSE-MIT |
 | [flate2](https://crates.io/crates/flate2/1.1.10) | 1.1.10 | Transitive | MIT OR Apache-2.0 | LICENSE-APACHE, LICENSE-MIT |
 | [foldhash](https://crates.io/crates/foldhash/0.2.0) | 0.2.0 | Transitive | Zlib | LICENSE |
 | [font-types](https://crates.io/crates/font-types/0.11.3) | 0.11.3 | Transitive | MIT OR Apache-2.0 | LICENSE-APACHE, LICENSE-MIT |
 | [form_urlencoded](https://crates.io/crates/form_urlencoded/1.2.2) | 1.2.2 | Transitive | MIT OR Apache-2.0 | LICENSE-APACHE, LICENSE-MIT |
 | [getrandom](https://crates.io/crates/getrandom/0.3.4) | 0.3.4 | Transitive | MIT OR Apache-2.0 | LICENSE-APACHE, LICENSE-MIT |
+| [getrandom](https://crates.io/crates/getrandom/0.4.3) | 0.4.3 | Transitive | MIT OR Apache-2.0 | LICENSE-APACHE, LICENSE-MIT |
 | [gl_generator](https://crates.io/crates/gl_generator/0.14.0) | 0.14.0 | Transitive | Apache-2.0 | upstream license supplement |
 | [glow](https://crates.io/crates/glow/0.17.0) | 0.17.0 | Transitive | MIT OR Apache-2.0 OR Zlib | LICENSE-APACHE, LICENSE-MIT, LICENSE-ZLIB |
 | [glutin](https://crates.io/crates/glutin/0.32.3) | 0.32.3 | Transitive | Apache-2.0 | LICENSE |
@@ -95,6 +102,7 @@ The Rust standard library is outside Cargo.lock; its [original notices](toolchai
 | [idna_adapter](https://crates.io/crates/idna_adapter/1.2.2) | 1.2.2 | Transitive | Apache-2.0 OR MIT | LICENSE-APACHE, LICENSE-MIT |
 | [image](https://crates.io/crates/image/0.25.10) | 0.25.10 | Direct | MIT OR Apache-2.0 | LICENSE-APACHE, LICENSE-MIT |
 | [itoa](https://crates.io/crates/itoa/1.0.18) | 1.0.18 | Transitive | MIT OR Apache-2.0 | LICENSE-APACHE, LICENSE-MIT |
+| [jobserver](https://crates.io/crates/jobserver/0.1.35) | 0.1.35 | Transitive | MIT OR Apache-2.0 | LICENSE-APACHE, LICENSE-MIT |
 | [khronos_api](https://crates.io/crates/khronos_api/3.1.0) | 3.1.0 | Transitive | Apache-2.0 | upstream license supplement |
 | [kittest](https://crates.io/crates/kittest/0.4.0) | 0.4.0 | Transitive | MIT OR Apache-2.0 | LICENSE-APACHE, LICENSE-MIT |
 | [kurbo](https://crates.io/crates/kurbo/0.13.1) | 0.13.1 | Transitive | Apache-2.0 OR MIT | LICENSE-APACHE, LICENSE-MIT |
@@ -148,6 +156,7 @@ The Rust standard library is outside Cargo.lock; its [original notices](toolchai
 | [serde_derive](https://crates.io/crates/serde_derive/1.0.228) | 1.0.228 | Transitive | MIT OR Apache-2.0 | LICENSE-APACHE, LICENSE-MIT |
 | [serde_json](https://crates.io/crates/serde_json/1.0.150) | 1.0.150 | Direct | MIT OR Apache-2.0 | LICENSE-APACHE, LICENSE-MIT |
 | [serde_spanned](https://crates.io/crates/serde_spanned/1.1.1) | 1.1.1 | Transitive | MIT OR Apache-2.0 | LICENSE-APACHE, LICENSE-MIT |
+| [shlex](https://crates.io/crates/shlex/2.0.1) | 2.0.1 | Transitive | MIT OR Apache-2.0 | LICENSE-APACHE, LICENSE-MIT |
 | [simd-adler32](https://crates.io/crates/simd-adler32/0.3.10) | 0.3.10 | Transitive | MIT | LICENSE.md |
 | [siphasher](https://crates.io/crates/siphasher/1.0.4) | 1.0.4 | Transitive | MIT OR Apache-2.0 | COPYING, LICENSE-APACHE, LICENSE-MIT |
 | [skrifa](https://crates.io/crates/skrifa/0.40.0) | 0.40.0 | Transitive | MIT OR Apache-2.0 | LICENSE-APACHE, LICENSE-MIT |

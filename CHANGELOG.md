@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+- **Duplicate files:** a new **Duplicates** view on the Storage page compares the files below the current folder by content, after a scan and only on request. Only same-size files are read; the first and last 16 KiB rule out most, and BLAKE3 hashes confirm the rest. The biggest savings appear first, the oldest copy leads each group, and the search filters groups. Hard links are not copies, APFS clones count only their own blocks, cloud files are never downloaded and changed files are left out. Export as CSV or JSON, or run `--headless --scan PATH --duplicates FILE [--min-size SIZE]`. [How it works](docs/usage.md#duplicate-files)
+- Scans in the window are as fast as headless scans: results no longer wait for the next repaint, which made standard scans of large drives about ten times slower.
+- Sorting large result lists by name and searching with filters only (`kind:file`, `ext:jpg`) no longer take seconds per keystroke on millions of entries.
+- A context menu acts on the entry you right-clicked even when rows re-sort under it during a scan.
+- Windows: folders whose names end in a dot or space (`foo.`) are scanned themselves instead of failing or counting a sibling twice; empty FAT/exFAT drives scan without an error.
+- Repeated search filters narrow each other (`size:>1g size:<4g`), quoted phrases match as written, and `.gitignore` finds `.gitignore` first.
+- Headless commands check every output before working and fail with exit code 1 when the scan folder cannot be read; `--scale` and `--window-size` reject values they used to clamp.
+- Escape leaves text fields and menus before it cancels a scan; Ctrl/⌘ + plus no longer zooms past the scale setting; the scale slider no longer flickers while dragged.
+- GPU readings: an unplugged eGPU on a Mac no longer shows the integrated GPU's load; Windows sensors a driver does not have are unsupported instead of 0; the first CPU sample no longer reports every core as failed.
+- macOS shows ⌘ shortcuts, its own platform label and the shared memory manufacturer; Korean file names render; system tools that hang are stopped after 30 seconds.
+- Sizes just below a unit read 1.00 MiB instead of 1024.00 KiB; file paths in messages are never translated; translation fixes in French and Spanish.
+
 ## 0.3.0
 
 - **Rigometry for Mac:** one universal app for Apple silicon and Intel Macs, macOS 11 or later. [Install guide](docs/usage.md#install-on-macos)
