@@ -474,7 +474,7 @@ fn range(v: &str) -> Result<(u64, u64), ()> {
 
 /// Units as the rest of the app labels them: `k` `m` `g` `t` and the IEC
 /// `kib`..`tib` are binary, matching the table; SI `kb`..`tb` are decimal.
-fn parse_size(s: &str) -> Result<u64, ()> {
+pub(crate) fn parse_size(s: &str) -> Result<u64, ()> {
     let i = s
         .find(|c: char| !(c.is_ascii_digit() || c == '.'))
         .unwrap_or(s.len());

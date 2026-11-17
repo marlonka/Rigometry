@@ -1,7 +1,7 @@
 use crate::{
     i18n::{self, Language, message as td, text as tx},
     model::*,
-    state::{Page, Settings, Sort, State},
+    state::{DuplicateRow, Page, Settings, Sort, State, View},
 };
 use eframe::egui::{self, *};
 use egui_extras::{Column, TableBuilder};
@@ -37,7 +37,9 @@ pub struct App {
     capture_worker: Option<std::thread::JoinHandle<Result<(), String>>>,
     capture_failed: Arc<AtomicBool>,
     map_cache: Vec<(usize, Rect)>,
-    map_key: Option<(u64, Rect)>,
+    map_key: Option<(u64, Vec2)>,
+    /// Where the map was when `map_cache` was laid out.
+    map_origin: Pos2,
     cpu_tab: usize,
     window_override: Option<Vec2>,
 }
@@ -142,6 +144,7 @@ impl App {
             capture_failed,
             map_cache: vec![],
             map_key: None,
+            map_origin: Pos2::ZERO,
             cpu_tab: 0,
         }
     }
@@ -175,11 +178,7 @@ impl App {
         ui.with_layout(Layout::bottom_up(Align::Min), |ui| {
             if !dense {
                 ui.add_space(8.);
-                ui.label(
-                    RichText::new(concat!("v", env!("CARGO_PKG_VERSION"), "  ·  Windows x64"))
-                        .size(12.)
-                        .color(muted(ui)),
-                );
+                ui.label(RichText::new(PLATFORM_LABEL).size(12.).color(muted(ui)));
                 ui.add_space(16.);
             }
             if navigation(
@@ -210,7 +209,7 @@ impl App {
                     ui.label(
                         RichText::new(tx(ui, "Telemetry stale"))
                             .size(12.)
-                            .color(GPU),
+                            .color(accent(ui, GPU)),
                     );
                 }
             } else {
@@ -1211,7 +1210,7 @@ impl App {
             );
             if let Some(s) = &self.state.summary {
                 for note in &s.notes {
-                    ui.label(RichText::new(td(ui, note)).color(GPU));
+                    ui.label(RichText::new(td(ui, note)).color(accent(ui, GPU)));
                 }
             }
             return;
@@ -1265,7 +1264,7 @@ impl App {
             ui.label(
                 RichText::new(scan_status(&self.state))
                     .color(if self.state.scan.is_some() {
-                        GPU
+                        accent(ui, GPU)
                     } else {
                         muted(ui)
                     })
@@ -1324,35 +1323,24 @@ impl App {
         // number of widgets above this toolbar.
         ui.push_id("storage-view-tabs", |ui| {
             ui.horizontal_wrapped(|ui| {
-                if ui
-                    .selectable_label(
-                        !self.state.largest && !self.state.map_only,
-                        tx(ui, "Hierarchy"),
-                    )
-                    .clicked()
-                {
-                    self.state.largest = false;
-                    self.state.map_only = false;
-                    self.state.refresh_now();
-                }
-                if ui
-                    .selectable_label(
-                        self.state.largest && !self.state.map_only,
-                        tx(ui, "Largest files"),
-                    )
-                    .clicked()
-                {
-                    self.state.largest = true;
-                    self.state.map_only = false;
-                    self.state.sort = Sort::Allocated;
-                    self.state.descending = true;
-                    self.state.refresh_now();
-                }
-                if ui
-                    .selectable_label(self.state.map_only, tx(ui, "Map"))
-                    .clicked()
-                {
-                    self.state.map_only = true;
+                for (view, label) in [
+                    (View::Hierarchy, "Hierarchy"),
+                    (View::Largest, "Largest files"),
+                    (View::Map, "Map"),
+                    (View::Duplicates, "Duplicates"),
+                ] {
+                    if ui
+                        .selectable_label(self.state.view == view, tx(ui, label))
+                        .clicked()
+                        && self.state.view != view
+                    {
+                        self.state.view = view;
+                        if view == View::Largest {
+                            self.state.sort = Sort::Allocated;
+                            self.state.descending = true;
+                        }
+                        self.state.refresh_now();
+                    }
                 }
             })
         });
@@ -1365,8 +1353,12 @@ impl App {
             if search.changed() {
                 self.state.filter_changed();
             }
+            // The duplicates view offers its own report instead.
             let can_export = self.state.scan.is_none() && self.state.task.is_none();
             ui.add_enabled_ui(can_export, |ui| {
+                if self.state.view == View::Duplicates {
+                    return;
+                }
                 for format in ["CSV", "JSON"] {
                     if ui.button(format).on_hover_text(tx(ui, "Export whole scan, including entries outside the current folder or filter")).clicked() {
                         self.state.export(&format.to_lowercase());
@@ -1398,7 +1390,10 @@ impl App {
         // Leave room for the selected path, actions and scan notes below them.
         let used_height = ui.cursor().top() - ui.max_rect().top();
         let height = (viewport_height - used_height - 200.).clamp(180., 480.);
-        let clicked = if self.state.map_only {
+        let clicked = if self.state.view == View::Duplicates {
+            self.storage_duplicates(ui);
+            None
+        } else if self.state.view == View::Map {
             self.storage_map(ui, height)
         } else if split {
             let width = ui.available_width();
@@ -1465,6 +1460,9 @@ impl App {
             if is_dir && ui.button(tx(ui, "Open folder")).clicked() {
                 self.state.navigate_scope(self.state.selected);
             }
+            if self.state.view == View::Duplicates {
+                return;
+            }
             ui.label(
                 RichText::new(td(
                     ui,
@@ -1485,7 +1483,7 @@ impl App {
         let compact = ui.available_width() < 640.;
         // Counting files only says something about folders; the largest-files
         // list has none, so it drops the column.
-        let counts = !self.state.largest;
+        let counts = self.state.view != View::Largest;
         let total = self.state.nodes[self.state.scope].allocated;
         let mut clicked = None;
         let mut toggle = None;
@@ -1551,41 +1549,48 @@ impl App {
             .body(|body| {
                 body.rows(30., self.state.visible.len(), |mut row| {
                     let (id, depth) = self.state.visible[row.index()];
-                    let node = &self.state.nodes[id];
+                    let nodes = &self.state.nodes;
+                    let node = &nodes[id];
                     row.set_selected(self.state.selected == id);
+                    // Cell widgets are keyed by entry, not row position: rows
+                    // re-sort while a scan runs, and focus must stay on its entry.
                     row.col(|ui| {
-                        let indent =
-                            (depth.min(20) as f32 * 15.).min((ui.available_width() - 75.).max(0.));
-                        ui.add_space(indent);
-                        if node.is_dir {
-                            if folder_toggle(ui, &node.name, self.state.expanded.contains(&id))
-                                .clicked()
-                            {
-                                toggle = Some(id);
+                        ui.push_id(id, |ui| {
+                            let indent = (depth.min(20) as f32 * 15.)
+                                .min((ui.available_width() - 75.).max(0.));
+                            ui.add_space(indent);
+                            if node.is_dir {
+                                if folder_toggle(ui, &node.name, self.state.expanded.contains(&id))
+                                    .clicked()
+                                {
+                                    toggle = Some(id);
+                                }
+                            } else {
+                                ui.add_space(38.);
                             }
-                        } else {
-                            ui.add_space(38.);
-                        }
-                        let response =
-                            ui.add(Label::new(&node.name).truncate().sense(Sense::click()));
-                        if response.clicked() || response.secondary_clicked() {
-                            self.state.selected = id;
-                        }
-                        if response.double_clicked() && node.is_dir {
-                            clicked = Some(id);
-                        }
-                        entry_menu(&response, node, &mut action);
-                        response.on_hover_text(td(
-                            ui,
-                            format!(
-                                "{}\nOn disk: {}\nFile size: {}\nScope: {}%\n{}",
-                                crate::storage::node_path(&self.state.nodes, id).display(),
-                                node_size(ui, node, true),
-                                node_size(ui, node, false),
-                                i18n::language(ui).decimal(share(node.allocated, total), 1),
-                                td(ui, &node.note)
-                            ),
-                        ));
+                            let response =
+                                ui.add(Label::new(&node.name).truncate().sense(Sense::click()));
+                            if response.clicked() || response.secondary_clicked() {
+                                self.state.selected = id;
+                            }
+                            if response.double_clicked() && node.is_dir {
+                                clicked = Some(id);
+                            }
+                            entry_menu(&response, nodes, id, &mut action);
+                            response.on_hover_ui(|ui| {
+                                ui.label(td(
+                                    ui,
+                                    format!(
+                                        "{}\nOn disk: {}\nFile size: {}\nScope: {}%\n{}",
+                                        crate::storage::node_path(nodes, id).display(),
+                                        node_size(ui, node, true),
+                                        node_size(ui, node, false),
+                                        i18n::language(ui).decimal(share(node.allocated, total), 1),
+                                        td(ui, &node.note)
+                                    ),
+                                ));
+                            });
+                        });
                     });
                     row.col(|ui| {
                         let value = node_size(ui, node, true);
@@ -1613,15 +1618,17 @@ impl App {
                         });
                     }
                     row.col(|ui| {
-                        if reveal_button(ui, &node.name).clicked() {
-                            action = Some(EntryAction::Reveal(id));
-                        }
+                        ui.push_id(id, |ui| {
+                            if reveal_button(ui, &node.name).clicked() {
+                                action = Some(EntryAction::Reveal(id));
+                            }
+                        });
                     });
                     let response = row.response();
                     if response.clicked() || response.secondary_clicked() {
                         self.state.selected = id;
                     }
-                    entry_menu(&response, node, &mut action);
+                    entry_menu(&response, nodes, id, &mut action);
                 });
             });
         if let Some(id) = toggle {
@@ -1661,6 +1668,279 @@ impl App {
             None => {}
         }
     }
+    /// Files with identical contents below the current folder, found on request.
+    fn storage_duplicates(&mut self, ui: &mut Ui) {
+        let running = self.state.duplicates_running();
+        ui.horizontal_wrapped(|ui| {
+            let label = ui.label(tx(ui, "Smallest file"));
+            let current = self.state.settings.duplicate_min_size;
+            ComboBox::from_id_salt("duplicate-min-size")
+                .selected_text(minimum_label(ui, current))
+                .show_ui(ui, |ui| {
+                    for size in [1, 4 << 10, 64 << 10, 1 << 20, 16 << 20, 256 << 20] {
+                        ui.selectable_value(
+                            &mut self.state.settings.duplicate_min_size,
+                            size,
+                            minimum_label(ui, size),
+                        );
+                    }
+                })
+                .response
+                .labelled_by(label.id);
+            if running {
+                if ui.button(tx(ui, "Cancel")).clicked() {
+                    self.state.cancel_duplicates();
+                }
+            } else if ui
+                .add_enabled(
+                    self.state.scan.is_none(),
+                    Button::new(tx(ui, "Find duplicates")),
+                )
+                .on_hover_text(tx(ui, "Reads the files below this folder that share their size with another file and compares their contents. Nothing is changed or deleted."))
+                .on_disabled_hover_text(tx(ui, "Available when the scan has finished"))
+                .clicked()
+            {
+                self.state.find_duplicates();
+            }
+        });
+        ui.add_space(8.);
+        let Some(found) = &self.state.duplicates else {
+            ui.label(
+                RichText::new(tx(ui, "Copies are files with the same size and the same BLAKE3 hash of their contents. Further hard links of one file are not copies; nothing is changed or deleted."))
+                    .size(12.)
+                    .color(muted(ui)),
+            );
+            return;
+        };
+        let nodes = &self.state.nodes;
+        if found.root != self.state.scope {
+            ui.label(
+                RichText::new(td(
+                    ui,
+                    format!(
+                        "Results for {}",
+                        crate::storage::node_path(nodes, found.root).display()
+                    ),
+                ))
+                .size(12.)
+                .color(muted(ui)),
+            );
+        }
+        let lang = i18n::language(ui);
+        if running {
+            if let Some(progress) = &found.progress {
+                let stage = match progress.stage {
+                    crate::storage::duplicates::Stage::Sampling => {
+                        "Comparing the start and end of each file"
+                    }
+                    crate::storage::duplicates::Stage::Contents => "Comparing full contents",
+                };
+                let fraction = if progress.bytes_total == 0 {
+                    0.
+                } else {
+                    progress.bytes_done as f32 / progress.bytes_total as f32
+                };
+                ui.add(ProgressBar::new(fraction.clamp(0., 1.)).text(td(
+                    ui,
+                    format!(
+                        "{}: {} of {} files · {} of {}",
+                        tx(ui, stage),
+                        lang.integer(progress.files_done),
+                        lang.integer(progress.files_total),
+                        ui_bytes(ui, progress.bytes_done),
+                        ui_bytes(ui, progress.bytes_total)
+                    ),
+                )));
+            } else {
+                ui.label(RichText::new(tx(ui, "Grouping files by size…")).color(accent(ui, GPU)));
+            }
+        }
+        let reclaimable: u64 = found
+            .groups
+            .iter()
+            .map(|g| g.reclaimable)
+            .fold(0, u64::saturating_add);
+        let extra: u64 = found.groups.iter().map(|g| g.copies.len() as u64 - 1).sum();
+        let mut export = None;
+        ui.horizontal_wrapped(|ui| {
+            let text = match &found.summary {
+                Some(summary) if found.groups.is_empty() => td(
+                    ui,
+                    format!(
+                        "No copies among {} files of at least {}",
+                        lang.integer(summary.files),
+                        ui_bytes(ui, summary.min_size)
+                    ),
+                ),
+                _ => td(
+                    ui,
+                    format!(
+                        "{} sets of copies · {} extra copies · up to {} reclaimable",
+                        lang.integer(found.groups.len() as u64),
+                        lang.integer(extra),
+                        ui_bytes(ui, reclaimable)
+                    ),
+                ),
+            };
+            ui.label(RichText::new(text).size(15.));
+            if let Some(summary) = &found.summary
+                && !found.groups.is_empty()
+            {
+                ui.add_enabled_ui(self.state.task.is_none(), |ui| {
+                    for format in ["CSV", "JSON"] {
+                        if ui
+                            .button(format)
+                            .on_hover_text(tx(ui, "Export the sets of copies shown"))
+                            .clicked()
+                        {
+                            export = Some(format.to_lowercase());
+                        }
+                    }
+                });
+                if summary.cancelled {
+                    ui.label(
+                        RichText::new(tx(ui, "Partial · cancelled"))
+                            .size(12.)
+                            .color(accent(ui, GPU)),
+                    );
+                }
+            }
+        });
+        ui.add_space(8.);
+        let mut action = None;
+        if !found.rows.is_empty() {
+            TableBuilder::new(ui)
+                .id_salt(("duplicates", self.state.scan_generation))
+                .vscroll(false)
+                .vertical_scroll_offset(0.)
+                .scroll_bar_visibility(scroll_area::ScrollBarVisibility::AlwaysHidden)
+                .striped(false)
+                .resizable(false)
+                .cell_layout(Layout::left_to_right(Align::Center))
+                .sense(Sense::click())
+                .column(Column::remainder().clip(true))
+                .column(Column::exact(104.).clip(true))
+                .column(Column::exact(36.))
+                .body(|body| {
+                    body.rows(30., found.rows.len(), |mut row| {
+                        match found.rows[row.index()] {
+                            DuplicateRow::Group(g) => {
+                                let group = &found.groups[g];
+                                row.col(|ui| {
+                                    ui.push_id(("group", g), |ui| {
+                                        ui.add(
+                                            Label::new(
+                                                RichText::new(td(
+                                                    ui,
+                                                    format!(
+                                                        "{} copies of {} · up to {} reclaimable",
+                                                        group.copies.len(),
+                                                        ui_bytes(ui, group.size),
+                                                        ui_bytes(ui, group.reclaimable)
+                                                    ),
+                                                ))
+                                                .strong(),
+                                            )
+                                            .truncate(),
+                                        );
+                                    });
+                                });
+                                row.col(|_| {});
+                                row.col(|_| {});
+                            }
+                            DuplicateRow::Copy(g, c) => {
+                                let group = &found.groups[g];
+                                let copy = &group.copies[c];
+                                let id = copy.id;
+                                let node = &nodes[id];
+                                row.set_selected(self.state.selected == id);
+                                row.col(|ui| {
+                                    ui.push_id(("copy", id), |ui| {
+                                        ui.add_space(24.);
+                                        let folder = node
+                                            .parent
+                                            .map(|p| crate::storage::node_path(nodes, p))
+                                            .unwrap_or_default();
+                                        let mut job = egui::text::LayoutJob::default();
+                                        let font = FontId::proportional(14.);
+                                        job.append(&node.name, 0., TextFormat::simple(font.clone(), ui.visuals().text_color()));
+                                        job.append(
+                                            &folder.to_string_lossy(),
+                                            12.,
+                                            TextFormat::simple(FontId::proportional(12.), muted(ui)),
+                                        );
+                                        let response = ui.add(Label::new(job).truncate().sense(Sense::click()));
+                                        if response.clicked() || response.secondary_clicked() {
+                                            self.state.selected = id;
+                                        }
+                                        entry_menu(&response, nodes, id, &mut action);
+                                        response.on_hover_ui(|ui| {
+                                            let path = crate::storage::node_path(nodes, id);
+                                            let mut lines = vec![path.display().to_string()];
+                                            if c == 0 && group.copies.iter().any(|other| other.modified_ms != copy.modified_ms) {
+                                                lines.push(tx(ui, "Oldest copy"));
+                                            }
+                                            lines.push(if copy.links > 1 {
+                                                tx(ui, "Deleting this path frees nothing: other hard links keep the file.")
+                                            } else {
+                                                td(ui, format!("Deleting it frees up to {}", ui_bytes(ui, copy.freeable)))
+                                            });
+                                            ui.label(lines.join("\n"));
+                                        });
+                                    });
+                                });
+                                row.col(|ui| {
+                                    let value = node_size(ui, node, true);
+                                    numeric_value(ui, &value, ui.available_width(), 12.);
+                                });
+                                row.col(|ui| {
+                                    ui.push_id(("copy-reveal", id), |ui| {
+                                        if reveal_button(ui, &node.name).clicked() {
+                                            action = Some(EntryAction::Reveal(id));
+                                        }
+                                    });
+                                });
+                                if row.response().clicked() {
+                                    self.state.selected = id;
+                                }
+                            }
+                        }
+                    });
+                });
+        }
+        if let Some(summary) = &found.summary {
+            ui.add_space(8.);
+            folding(ui, tx(ui, "Comparison details")).id_salt("duplicate-notes").show(ui, |ui| {
+                ui.label(td(
+                    ui,
+                    format!(
+                        "{} files compared · {} read · {}",
+                        lang.integer(summary.compared),
+                        ui_bytes(ui, summary.bytes_read),
+                        tx(ui, &summary.medium)
+                    ),
+                ));
+                ui.label(td(
+                    ui,
+                    format!(
+                        "{} smaller files not compared · {} hard-link paths · {} changed since the scan · {} skipped · {} errors",
+                        lang.integer(summary.below_minimum),
+                        lang.integer(summary.hard_links),
+                        lang.integer(summary.changed),
+                        lang.integer(summary.skipped),
+                        lang.integer(summary.errors)
+                    ),
+                ));
+                for note in &summary.notes {
+                    ui.label(td(ui, note));
+                }
+            });
+        }
+        if let Some(format) = export {
+            self.state.export_duplicates(&format);
+        }
+        self.apply_entry_action(ui, action);
+    }
     fn storage_map(&mut self, ui: &mut Ui, height: f32) -> Option<usize> {
         let mut clicked = None;
         let mut action = None;
@@ -1678,16 +1958,27 @@ impl App {
                 muted(ui),
             );
         } else {
-            if self.map_key != Some((self.state.map_revision, rect)) {
+            // Keyed by size: scrolling moves the map without laying it out again.
+            if self.map_key != Some((self.state.map_revision, rect.size())) {
                 self.map_cache = treemap_tiles(nonzero, &self.state.nodes, rect);
-                self.map_key = Some((self.state.map_revision, rect));
+                self.map_key = Some((self.state.map_revision, rect.size()));
+                self.map_origin = rect.min;
             }
-            for &(id, rect) in &self.map_cache {
+            let offset = rect.min - self.map_origin;
+            for &(id, tile) in &self.map_cache {
+                let rect = tile.translate(offset);
                 if rect.width() < 1. || rect.height() < 1. {
                     continue;
                 }
                 let node = &self.state.nodes[id];
                 let r = rect.shrink(1.5);
+                // Tiles too small to point at are painted, not made interactive:
+                // a folder of thousands of files must not cost a widget each.
+                if rect.width() < 6. || rect.height() < 6. {
+                    ui.painter()
+                        .rect_filled(r, 2, tile_color(id, ui.visuals().dark_mode));
+                    continue;
+                }
                 let response = ui.interact(
                     r,
                     Id::new(("tile", self.state.scan_generation, id)),
@@ -1745,16 +2036,18 @@ impl App {
                 if response.double_clicked() && node.is_dir {
                     clicked = Some(id);
                 }
-                entry_menu(&response, node, &mut action);
-                response.on_hover_text(td(
-                    ui,
-                    format!(
-                        "{}\n{} on disk · {} file size\nDouble-click a folder to open",
-                        crate::storage::node_path(&self.state.nodes, id).display(),
-                        node_size(ui, node, true),
-                        node_size(ui, node, false)
-                    ),
-                ));
+                entry_menu(&response, &self.state.nodes, id, &mut action);
+                response.on_hover_ui(|ui| {
+                    ui.label(td(
+                        ui,
+                        format!(
+                            "{}\n{} on disk · {} file size\nDouble-click a folder to open",
+                            crate::storage::node_path(&self.state.nodes, id).display(),
+                            node_size(ui, node, true),
+                            node_size(ui, node, false)
+                        ),
+                    ));
+                });
             }
         }
         ui.add_space(10.);
@@ -1870,7 +2163,7 @@ impl App {
             ui.add_space(12.);
             let scale_label = ui.label(tx(ui, "Interface scale"));
             ui.spacing_mut().slider_width = (ui.available_width() - 90.).clamp(80., 220.);
-            if ui
+            let scale = ui
                 .add(
                     Slider::new(&mut self.state.settings.scale, 0.85..=1.5)
                         .custom_formatter(|value, _| format!("{:.0}%", value * 100.))
@@ -1884,9 +2177,10 @@ impl App {
                         })
                         .step_by(0.05),
                 )
-                .labelled_by(scale_label.id)
-                .changed()
-            {
+                .labelled_by(scale_label.id);
+            // Zooming while dragging moves the pointer within the slider and
+            // makes it oscillate; apply the scale once the drag ends.
+            if scale.drag_stopped() || (scale.changed() && !scale.dragged()) {
                 apply_style(ui.ctx(), &self.state.settings);
             }
             ui.add_space(12.);
@@ -1903,11 +2197,18 @@ impl App {
         ui.add_space(26.);
         section(ui, "Keyboard", |ui| {
             for (key, label) in [
-                ("Ctrl + 1…4", "Switch primary view"),
+                (
+                    if cfg!(target_os = "macos") {
+                        "⌘ 1…4"
+                    } else {
+                        "Ctrl + 1…4"
+                    },
+                    "Switch primary view",
+                ),
                 ("Tab / Shift + Tab", "Move focus"),
                 ("Enter / Space", "Activate focused control"),
                 ("F5", "Rescan current path"),
-                ("Escape", "Cancel current scan"),
+                ("Escape", "Cancel current scan or comparison"),
                 ("Alt + Up", "Go to parent scan folder"),
             ] {
                 summary_row(ui, key, &tx(ui, label), None);
@@ -2007,6 +2308,9 @@ impl eframe::App for App {
                 return;
             }
         }
+        // Escape first leaves a text field or closes a menu; only then does it
+        // cancel work.
+        let escape_cancels = !ctx.egui_wants_keyboard_input() && !egui::Popup::is_any_open(ctx);
         ctx.input(|i| {
             // Ctrl on Windows, Command on macOS.
             if i.modifiers.command {
@@ -2024,8 +2328,9 @@ impl eframe::App for App {
             if i.key_pressed(Key::F5) && self.state.settings.page == Page::Storage {
                 self.state.start_scan();
             }
-            if i.key_pressed(Key::Escape) {
+            if escape_cancels && i.key_pressed(Key::Escape) {
                 self.state.cancel_scan();
+                self.state.cancel_duplicates();
             }
             if i.modifiers.alt
                 && i.key_pressed(Key::ArrowUp)
@@ -2115,7 +2420,7 @@ impl eframe::App for App {
         );
         ctx.request_repaint_after(if live_view && !self.state.settings.reduce_motion {
             Duration::from_millis(33)
-        } else if self.state.scan.is_some() {
+        } else if self.state.scan.is_some() || self.state.duplicates_running() {
             Duration::from_millis(80)
         } else {
             Duration::from_secs(1)
@@ -2157,7 +2462,11 @@ impl eframe::App for App {
                         } else if self.state.scan.is_some()
                             && self.state.settings.page != Page::Storage
                         {
-                            ui.label(RichText::new(scan_status(&self.state)).size(12.).color(GPU));
+                            ui.label(
+                                RichText::new(scan_status(&self.state))
+                                    .size(12.)
+                                    .color(accent(ui, GPU)),
+                            );
                         }
                     });
                 });
@@ -2330,6 +2639,27 @@ fn finite_scale(scale: f32) -> f32 {
         scale.clamp(0.85, 1.5)
     } else {
         1.0
+    }
+}
+/// A minimum file size for the duplicate search: 1 byte means every file.
+fn minimum_label(ui: &Ui, size: u64) -> String {
+    if size <= 1 {
+        tx(ui, "Any size")
+    } else {
+        ui_bytes(ui, size)
+    }
+}
+/// An accent readable on the current theme: the dark theme's pastel accents
+/// are too light on the light theme's near-white panels.
+fn accent(ui: &Ui, color: Color32) -> Color32 {
+    if ui.visuals().dark_mode {
+        color
+    } else if color == CPU {
+        Color32::from_rgb(53, 109, 76)
+    } else if color == MEMORY {
+        Color32::from_rgb(54, 97, 151)
+    } else {
+        Color32::from_rgb(131, 97, 39)
     }
 }
 fn ui_bytes(ui: &Ui, value: u64) -> String {
@@ -2827,15 +3157,7 @@ impl MetricChart<'_> {
             height,
             secondary,
         } = self;
-        let color = if ui.visuals().dark_mode {
-            color
-        } else if color == CPU {
-            Color32::from_rgb(53, 109, 76)
-        } else if color == MEMORY {
-            Color32::from_rgb(54, 97, 151)
-        } else {
-            Color32::from_rgb(131, 97, 39)
-        };
+        let color = accent(ui, color);
         Frame::new()
             .fill(ui.visuals().faint_bg_color)
             .corner_radius(12)
@@ -3093,13 +3415,23 @@ enum EntryAction {
     CopyPath(usize),
     Open(usize),
 }
-/// Right-click menu shared by table rows, names and map tiles.
+/// Right-click menu shared by table rows, names and map tiles. It acts on the
+/// entry that was right-clicked, even when rows re-sort beneath the open menu.
 fn entry_menu(
     response: &Response,
-    node: &crate::storage::ScanNode,
+    nodes: &[crate::storage::ScanNode],
+    id: usize,
     action: &mut Option<EntryAction>,
 ) {
+    let target = Id::new("entry-menu-target");
+    if response.secondary_clicked() || response.long_touched() {
+        response.ctx.data_mut(|data| data.insert_temp(target, id));
+    }
     response.context_menu(|ui| {
+        let id = ui.ctx().data(|data| data.get_temp(target)).unwrap_or(id);
+        let Some(node) = nodes.get(id) else {
+            return;
+        };
         if ui.button(tx(ui, REVEAL)).clicked() {
             *action = Some(EntryAction::Reveal(node.id));
             ui.close();
@@ -3348,6 +3680,18 @@ fn file_manager_command(path: &std::path::Path) -> Result<std::process::Command,
     };
     Ok(command)
 }
+#[cfg(target_os = "macos")]
+const PLATFORM_LABEL: &str = concat!("v", env!("CARGO_PKG_VERSION"), "  ·  macOS");
+#[cfg(windows)]
+const PLATFORM_LABEL: &str = concat!("v", env!("CARGO_PKG_VERSION"), "  ·  Windows x64");
+#[cfg(not(any(windows, target_os = "macos")))]
+const PLATFORM_LABEL: &str = concat!("v", env!("CARGO_PKG_VERSION"), "  ·  Linux");
+/// The key that switches pages: Ctrl on Windows, Command on macOS.
+const COMMAND_KEY: &str = if cfg!(target_os = "macos") {
+    "⌘"
+} else {
+    "Ctrl"
+};
 const NO_GPU: &str = if cfg!(windows) {
     "No graphics adapters reported by DXGI"
 } else {
@@ -3432,7 +3776,7 @@ fn navigation(ui: &mut Ui, label: &str, key: &str, selected: bool, kind: usize) 
         .on_hover_text(if key.is_empty() {
             label.to_owned()
         } else {
-            format!("{label} · {}+{key}", tx(ui, "Ctrl"))
+            format!("{label} · {}+{key}", tx(ui, COMMAND_KEY))
         })
         .clicked()
 }

@@ -10,15 +10,20 @@ use windows::{
             BY_HANDLE_FILE_INFORMATION, CreateFileW, FILE_ATTRIBUTE_COMPRESSED,
             FILE_ATTRIBUTE_OFFLINE, FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS,
             FILE_ATTRIBUTE_RECALL_ON_OPEN, FILE_ATTRIBUTE_REPARSE_POINT,
-            FILE_ATTRIBUTE_SPARSE_FILE, FILE_COMPRESSION_INFO, FILE_FLAG_BACKUP_SEMANTICS,
-            FILE_FLAG_OPEN_NO_RECALL, FILE_FLAG_OPEN_REPARSE_POINT, FILE_ID_INFO,
+            FILE_ATTRIBUTE_SPARSE_FILE, FILE_ATTRIBUTE_TAG_INFO, FILE_BASIC_INFO,
+            FILE_COMPRESSION_INFO, FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_NO_RECALL,
+            FILE_FLAG_OPEN_REPARSE_POINT, FILE_FLAG_SEQUENTIAL_SCAN, FILE_ID_INFO,
             FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE, FILE_STANDARD_INFO,
-            FileCompressionInfo, FileIdInfo, FileStandardInfo, FileStreamInfo,
-            GetFileInformationByHandle, GetFileInformationByHandleEx, OPEN_EXISTING,
+            FileAttributeTagInfo, FileBasicInfo, FileCompressionInfo, FileIdInfo, FileStandardInfo,
+            FileStreamInfo, GetFileInformationByHandle, GetFileInformationByHandleEx,
+            OPEN_EXISTING,
         },
     },
     core::PCWSTR,
 };
+
+/// CompactOS (WOF) files are reparse points on disk but ordinary files to Windows.
+pub(super) const IO_REPARSE_TAG_WOF: u32 = 0x8000_0017;
 
 pub(super) struct OwnedHandle(pub(super) HANDLE);
 
@@ -167,6 +172,78 @@ pub(super) fn query<T: Default>(
     Ok(result)
 }
 
+/// The file behind a handle: the 128-bit ReFS/NTFS ID where available, else
+/// the 64-bit file index. Some network filesystems report all-zero IDs; those
+/// are no identity at all, never one shared by unrelated files.
+pub(super) fn identity(handle: HANDLE, basic: &BY_HANDLE_FILE_INFORMATION) -> Option<FileIdentity> {
+    if let Ok(id) = query::<FILE_ID_INFO>(handle, FileIdInfo)
+        && id.FileId.Identifier != [0; 16]
+    {
+        return Some(FileIdentity(id.VolumeSerialNumber, id.FileId.Identifier));
+    }
+    let index = ((basic.nFileIndexHigh as u64) << 32) | basic.nFileIndexLow as u64;
+    let mut id = [0; 16];
+    id[..8].copy_from_slice(&index.to_le_bytes());
+    (index != 0).then_some(FileIdentity(basic.dwVolumeSerialNumber as u64, id))
+}
+
+/// What reading a file's contents needs to know about its open handle.
+pub(super) struct Facts {
+    pub attributes: u32,
+    /// Reparse tag, or 0 for an ordinary file.
+    pub tag: u32,
+    pub size: u64,
+    pub links: u64,
+    pub identity: Option<FileIdentity>,
+    /// Last write and change times, 100 ns since 1601. NTFS can defer the
+    /// write time for open writers; the change time covers more updates.
+    pub written: i64,
+    pub changed: i64,
+}
+
+pub(super) fn facts(handle: HANDLE) -> windows::core::Result<Facts> {
+    let mut basic = BY_HANDLE_FILE_INFORMATION::default();
+    unsafe { GetFileInformationByHandle(handle, &mut basic)? };
+    let times = query::<FILE_BASIC_INFO>(handle, FileBasicInfo)?;
+    let tag = if basic.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT.0 != 0 {
+        query::<FILE_ATTRIBUTE_TAG_INFO>(handle, FileAttributeTagInfo)?.ReparseTag
+    } else {
+        0
+    };
+    Ok(Facts {
+        attributes: basic.dwFileAttributes,
+        tag,
+        size: ((basic.nFileSizeHigh as u64) << 32) | basic.nFileSizeLow as u64,
+        links: basic.nNumberOfLinks as u64,
+        identity: identity(handle, &basic),
+        written: times.LastWriteTime,
+        changed: times.ChangeTime,
+    })
+}
+
+/// Opens a file to read its main data stream, sharing it fully with other
+/// processes and never recalling cloud content. With `reparse_point`, a link
+/// at the final component is opened itself instead of followed.
+pub(super) fn open_contents(
+    path: &Path,
+    reparse_point: bool,
+    sequential: bool,
+) -> std::io::Result<fs::File> {
+    use std::os::windows::fs::OpenOptionsExt;
+    let mut flags = FILE_FLAG_OPEN_NO_RECALL.0;
+    if reparse_point {
+        flags |= FILE_FLAG_OPEN_REPARSE_POINT.0;
+    }
+    if sequential {
+        flags |= FILE_FLAG_SEQUENTIAL_SCAN.0;
+    }
+    fs::OpenOptions::new()
+        .read(true)
+        .share_mode(FILE_SHARE_READ.0 | FILE_SHARE_WRITE.0 | FILE_SHARE_DELETE.0)
+        .custom_flags(flags)
+        .open(path)
+}
+
 pub(super) fn read_entry(path: &Path, metadata: &fs::Metadata) -> EntryInfo {
     let mut result = EntryInfo {
         logical: if metadata.is_dir() { 0 } else { metadata.len() },
@@ -198,31 +275,14 @@ pub(super) fn read_entry(path: &Path, metadata: &fs::Metadata) -> EntryInfo {
     // Link counts can change between visited paths. Retain identity even when
     // this particular handle currently reports one link, so 1→2 and 2→1
     // transitions cannot count the same physical stream allocation twice.
-    result.identity = match query::<FILE_ID_INFO>(handle.0, FileIdInfo) {
-        Ok(id) if id.FileId.Identifier != [0; 16] => {
-            Some(FileIdentity(id.VolumeSerialNumber, id.FileId.Identifier))
-        }
-        _ => {
-            let mut id = [0; 16];
-            id[..8].copy_from_slice(
-                &(((basic.nFileIndexHigh as u64) << 32) | basic.nFileIndexLow as u64).to_le_bytes(),
-            );
-            // Some network filesystems report all-zero IDs. Never deduplicate
-            // these unrelated files as though zero were a valid identity.
-            if id == [0; 16] {
-                if result.links > 1 {
-                    result.errors += 1;
-                    append_note(
-                        &mut result.note,
-                        "Stable file identity unavailable; physical allocation excluded to avoid double-counting",
-                    );
-                }
-                None
-            } else {
-                Some(FileIdentity(basic.dwVolumeSerialNumber as u64, id))
-            }
-        }
-    };
+    result.identity = identity(handle.0, &basic);
+    if result.identity.is_none() && result.links > 1 {
+        result.errors += 1;
+        append_note(
+            &mut result.note,
+            "Stable file identity unavailable; physical allocation excluded to avoid double-counting",
+        );
+    }
     // FileStreamInfo enumerates metadata only, including directory ADS, and
     // reports each stream's separate logical and allocated sizes.
     match streams(handle.0) {

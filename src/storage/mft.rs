@@ -51,7 +51,6 @@ const FIXUP_BLOCK: usize = 512;
 /// that produces millions of entries in seconds.
 const MFT_BATCH: usize = 8192;
 const RECORD_NUMBER: u64 = 0x0000_ffff_ffff_ffff;
-const WOF_TAG: u32 = 0x8000_0017;
 /// IO_REPARSE_TAG_CLOUD and CLOUD_1 … CLOUD_F (OneDrive and other sync
 /// providers) differ only in bits 12–15.
 const CLOUD_TAG: u32 = 0x9000_001a;
@@ -720,7 +719,7 @@ fn add_attribute(
         }
         // $REPARSE_POINT: CompactOS files are ordinary files to Windows.
         0xc0 if !non_resident => match u32_at(value()?, 0) {
-            Some(WOF_TAG) => info.flags |= WOF,
+            Some(super::native::IO_REPARSE_TAG_WOF) => info.flags |= WOF,
             Some(tag) if tag & CLOUD_TAG_MASK == CLOUD_TAG => info.flags |= CLOUD,
             _ => {}
         },

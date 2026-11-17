@@ -78,16 +78,16 @@
     "--language requiere system, en, de, fr o es"
   ],
   [
-    "--window-size requires positive finite WIDTHxHEIGHT",
-    "--window-size benötigt BREITExHÖHE mit endlichen positiven Zahlen",
-    "--window-size nécessite LARGEURxHAUTEUR avec des nombres finis positifs",
-    "--window-size requiere ANCHOxALTO con números finitos positivos"
+    "--window-size requires WIDTHxHEIGHT from 1080x720 to 3840x2160",
+    "--window-size benötigt BREITExHÖHE von 1080x720 bis 3840x2160",
+    "--window-size nécessite LARGEURxHAUTEUR de 1080x720 à 3840x2160",
+    "--window-size requiere ANCHOxALTO de 1080x720 a 3840x2160"
   ],
   [
-    "--scale requires a positive finite number",
-    "--scale benötigt eine endliche positive Zahl",
-    "--scale nécessite un nombre fini positif",
-    "--scale requiere un número finito positivo"
+    "--scale requires a number from 0.85 to 1.5",
+    "--scale benötigt eine Zahl von 0.85 bis 1.5",
+    "--scale nécessite un nombre de 0.85 à 1.5",
+    "--scale requiere un número de 0.85 a 1.5"
   ],
   [
     "--theme requires Dark, Light or System",
@@ -120,16 +120,16 @@
     "--headless requiere --report o --scan con --export"
   ],
   [
-    "Headless scans require both --scan and --export",
-    "Analysen ohne Oberfläche benötigen --scan und --export",
-    "Les analyses sans interface nécessitent --scan et --export",
-    "Los análisis sin interfaz requieren --scan y --export"
+    "Headless scans require --scan with --export or --duplicates",
+    "Analysen ohne Oberfläche benötigen --scan mit --export oder --duplicates",
+    "Les analyses sans interface nécessitent --scan avec --export ou --duplicates",
+    "Los análisis sin interfaz requieren --scan con --export o --duplicates"
   ],
   [
-    "--report and --export require --headless",
-    "--report und --export benötigen --headless",
-    "--report et --export nécessitent --headless",
-    "--report y --export requieren --headless"
+    "--report, --export and --duplicates require --headless",
+    "--report, --export und --duplicates benötigen --headless",
+    "--report, --export et --duplicates nécessitent --headless",
+    "--report, --export y --duplicates requieren --headless"
   ],
   [
     "Command-line arguments must be valid Unicode",
@@ -142,12 +142,6 @@
     "Screenshot-Aufnahme fehlgeschlagen oder unterbrochen; vorhandene Dateien werden niemals überschrieben",
     "Capture échouée ou interrompue ; les fichiers existants ne sont jamais écrasés",
     "La captura falló o se interrumpió; los archivos existentes nunca se sobrescriben"
-  ],
-  [
-    "--scan requires --export in headless mode",
-    "--scan benötigt --export im Modus ohne Oberfläche",
-    "--scan nécessite --export en mode sans interface",
-    "--scan requiere --export en modo sin interfaz"
   ],
   [
     "Provider returned a non-finite value",
@@ -292,5 +286,41 @@
     "{0} · {1}\n{2}\nLetzter Wert: {3}",
     "{0} · {1}\n{2}\nDernière valeur : {3}",
     "{0} · {1}\n{2}\nÚltimo valor: {3}"
+  ],
+  [
+    "Export duplicate files (.csv, otherwise JSON)",
+    "Doppelte Dateien exportieren (.csv, sonst JSON)",
+    "Exporter les fichiers en double (.csv, sinon JSON)",
+    "Exportar archivos duplicados (.csv; si no, JSON)"
+  ],
+  [
+    "Smallest file compared for duplicates (default 1m)",
+    "Kleinste auf Duplikate verglichene Datei (Standard 1m)",
+    "Plus petit fichier comparé pour les doublons (1m par défaut)",
+    "Archivo más pequeño comparado en busca de duplicados (1m por defecto)"
+  ],
+  [
+    "--min-size requires a size such as 4k, 1m or 2gb",
+    "--min-size benötigt eine Größe wie 4k, 1m oder 2gb",
+    "--min-size nécessite une taille comme 4k, 1m ou 2gb",
+    "--min-size requiere un tamaño como 4k, 1m o 2gb"
+  ],
+  [
+    "--min-size requires --duplicates",
+    "--min-size benötigt --duplicates",
+    "--min-size nécessite --duplicates",
+    "--min-size requiere --duplicates"
+  ],
+  [
+    "Each output needs its own file name",
+    "Jede Ausgabe benötigt einen eigenen Dateinamen",
+    "Chaque sortie nécessite son propre nom de fichier",
+    "Cada salida necesita su propio nombre de archivo"
+  ],
+  [
+    "Scan failed: {0}",
+    "Analyse fehlgeschlagen: {0}",
+    "Échec de l’analyse : {0}",
+    "El análisis falló: {0}"
   ]
 ]

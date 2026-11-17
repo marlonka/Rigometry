@@ -9,7 +9,7 @@
 
 use super::{
     FileIdentity, ScanNode, Worker, append_note,
-    native::{OwnedHandle, io_error, query, skip_attributes, wide, win32_code},
+    native::{IO_REPARSE_TAG_WOF, OwnedHandle, io_error, query, skip_attributes, wide, win32_code},
 };
 use crossbeam_channel::{RecvTimeoutError, bounded, unbounded};
 use std::{
@@ -36,8 +36,6 @@ use windows::{
 /// More threads stop helping once the drive or the scan thread is saturated.
 const MAX_THREADS: usize = 8;
 const BUFFER_BYTES: usize = 64 * 1024;
-/// Compact OS files carry this tag; Windows reads them as ordinary files.
-const IO_REPARSE_TAG_WOF: u32 = 0x8000_0017;
 
 /// Where one directory-information class keeps its fields. Each record
 /// starts with the same 64 bytes; the file ID and name follow at different

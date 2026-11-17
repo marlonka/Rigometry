@@ -259,7 +259,7 @@ fn volume() -> Image {
             rec(1, false)
                 .info(REPARSE | SPARSE)
                 .name(5, ROOT_SEQ, "w.dll", 3)
-                .reparse(WOF_TAG)
+                .reparse(crate::storage::native::IO_REPARSE_TAG_WOF)
                 .data("", 0, 50_000, &[(None, 13)])
                 .data(WOF_STREAM, 0, 9_000, &[(Some(45), 3)])
                 .finish(),
@@ -341,6 +341,7 @@ fn volume() -> Image {
 fn worker() -> Worker {
     let (sender, _) = crossbeam_channel::bounded(9);
     Worker {
+        wake: std::sync::Arc::new(|| {}),
         sender,
         cancel: Arc::new(AtomicBool::new(false)),
         summary: ScanSummary::default(),

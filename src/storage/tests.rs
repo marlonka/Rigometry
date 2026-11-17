@@ -88,6 +88,7 @@ fn hardlink_count_changes_never_double_count_physical_bytes() {
         }
         let (sender, _receiver) = bounded(QUEUE_CAPACITY);
         let mut worker = Worker {
+            wake: std::sync::Arc::new(|| {}),
             sender,
             cancel: Arc::new(AtomicBool::new(false)),
             summary: ScanSummary::default(),
@@ -165,6 +166,7 @@ fn cancellation_cannot_block_on_full_progress_queue() {
     let worker_cancel = cancel.clone();
     let join = std::thread::spawn(move || {
         let mut worker = Worker {
+            wake: std::sync::Arc::new(|| {}),
             sender,
             cancel: worker_cancel,
             summary: ScanSummary::default(),
@@ -318,6 +320,7 @@ fn metadata_budget_finishes_as_partial_without_cancel_or_retaining_more_nodes() 
     fs::write(&file, b"user data").unwrap();
     let (sender, receiver) = bounded(QUEUE_CAPACITY);
     let mut worker = Worker {
+        wake: std::sync::Arc::new(|| {}),
         sender: sender.clone(),
         cancel: Arc::new(AtomicBool::new(false)),
         summary: ScanSummary::default(),
@@ -362,6 +365,7 @@ fn metadata_budget_finishes_as_partial_without_cancel_or_retaining_more_nodes() 
     let alias = fixture.path().join("also-kept.txt");
     fs::hard_link(&file, &alias).unwrap();
     let mut worker = Worker {
+        wake: std::sync::Arc::new(|| {}),
         sender,
         cancel: Arc::new(AtomicBool::new(false)),
         summary: ScanSummary::default(),

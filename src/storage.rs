@@ -26,6 +26,7 @@ const MAX_DIAGNOSTICS: usize = 24;
 const MAX_RETAINED_BYTES: usize = 1536 * 1024 * 1024;
 const MAX_NOTE_BYTES: usize = 4096;
 const NOTE_TRUNCATED: &str = "… [additional details omitted]";
+const METADATA_UNAVAILABLE: &str = "Metadata unavailable";
 
 /// One scanned entry. Paths are not stored: at millions of entries they would
 /// be the largest part of the tree. `node_path` rebuilds them from names; the
@@ -69,6 +70,42 @@ pub struct ScanSummary {
     pub locked: u64,
 }
 
+/// Why the scan root itself could not be read, if it could not: such a scan
+/// holds one placeholder node and no measurement at all.
+pub fn root_failure(nodes: &[ScanNode], summary: &ScanSummary) -> Option<String> {
+    match nodes.first() {
+        None => Some(summary.notes.first().cloned().unwrap_or_default()),
+        Some(root) if root.note.starts_with(METADATA_UNAVAILABLE) => Some(format!(
+            "{}: {}",
+            root.name,
+            root.note
+                .strip_prefix(METADATA_UNAVAILABLE)
+                .unwrap_or_default()
+                .trim_start_matches(": ")
+        )),
+        Some(_) => None,
+    }
+}
+
+/// Whether the scan missed or could not measure anything below `root`: it
+/// was cancelled or stopped, or an error was recorded inside that folder.
+/// Excluded links and placeholders are deliberate and do not count.
+pub fn subtree_partial(nodes: &[ScanNode], summary: &ScanSummary, root: usize) -> bool {
+    if summary.cancelled || summary.stopped_early {
+        return true;
+    }
+    summary.incomplete_nodes.iter().any(|&id| {
+        let mut next = Some(id);
+        while let Some(current) = next {
+            if current == root {
+                return true;
+            }
+            next = nodes.get(current).and_then(|node| node.parent);
+        }
+        false
+    })
+}
+
 /// Full path of a node, joined from its ancestors' names.
 pub fn node_path(nodes: &[ScanNode], id: usize) -> PathBuf {
     let mut chain = Vec::new();
@@ -91,6 +128,10 @@ pub struct ScanHandle {
     pub cancel: Arc<AtomicBool>,
 }
 
+/// Called from a worker thread after it queues results, so a UI that sleeps
+/// between frames drains them at once instead of at its next repaint.
+pub type Wake = Arc<dyn Fn() + Send + Sync>;
+
 impl Drop for ScanHandle {
     fn drop(&mut self) {
         self.cancel.store(true, Ordering::Relaxed);
@@ -100,13 +141,18 @@ impl Drop for ScanHandle {
 /// Starts a metadata-only scan. It never requests elevation, opens file contents,
 /// follows reparse points, or writes to the scanned tree.
 pub fn start_scan(path: PathBuf) -> ScanHandle {
+    start_scan_with(path, Arc::new(|| {}))
+}
+
+/// [`start_scan`], calling `wake` whenever results are queued.
+pub fn start_scan_with(path: PathBuf, wake: Wake) -> ScanHandle {
     let (sender, receiver) = bounded(QUEUE_CAPACITY);
     let cancel = Arc::new(AtomicBool::new(false));
     let worker_cancel = cancel.clone();
     let failure_sender = sender.clone();
     if let Err(error) = std::thread::Builder::new()
         .name("storage-scan".into())
-        .spawn(move || scan(path, sender, worker_cancel))
+        .spawn(move || scan(path, sender, worker_cancel, wake))
     {
         let _ = failure_sender.try_send(ScanEvent::Finished(ScanSummary {
             errors: 1,
@@ -117,7 +163,7 @@ pub fn start_scan(path: PathBuf) -> ScanHandle {
     ScanHandle { receiver, cancel }
 }
 
-#[derive(Hash, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Hash, Eq, PartialEq)]
 struct FileIdentity(u64, [u8; 16]);
 
 #[derive(Default)]
@@ -159,12 +205,13 @@ impl Refusal {
 }
 
 #[derive(Clone, Copy)]
+#[cfg_attr(not(any(windows, target_os = "macos")), allow(dead_code))]
 enum Skip {
     Reparse,
     Cloud,
 }
 
-fn scan(path: PathBuf, sender: Sender<ScanEvent>, cancel: Arc<AtomicBool>) {
+fn scan(path: PathBuf, sender: Sender<ScanEvent>, cancel: Arc<AtomicBool>, wake: Wake) {
     let started = Instant::now();
     let path = match checked_path(&path).and_then(|path| {
         check_ancestors(&path)?;
@@ -178,6 +225,7 @@ fn scan(path: PathBuf, sender: Sender<ScanEvent>, cancel: Arc<AtomicBool>) {
                 notes: vec![error],
                 ..Default::default()
             }));
+            wake();
             return;
         }
     };
@@ -192,6 +240,7 @@ fn scan(path: PathBuf, sender: Sender<ScanEvent>, cancel: Arc<AtomicBool>) {
     };
     let mut worker = Worker {
         sender,
+        wake,
         cancel,
         summary,
         seen: HashSet::new(),
@@ -292,10 +341,12 @@ fn finish_scan(mut worker: Worker, started: Instant) {
     // Batch sends reserve the final channel slot. Cancellation therefore never
     // leaves a worker blocked behind a UI that has stopped draining results.
     let _ = worker.sender.try_send(ScanEvent::Finished(worker.summary));
+    (worker.wake)();
 }
 
 struct Worker {
     sender: Sender<ScanEvent>,
+    wake: Wake,
     cancel: Arc<AtomicBool>,
     summary: ScanSummary,
     seen: HashSet<FileIdentity>,
@@ -439,7 +490,7 @@ impl Worker {
                 refused = refusal.is_some();
                 self.count_refusal(refusal);
                 self.record_error(path, &error.to_string());
-                node.note = format!("Metadata unavailable: {error}");
+                node.note = format!("{METADATA_UNAVAILABLE}: {error}");
                 node.incomplete = true;
             }
         }
@@ -496,17 +547,20 @@ impl Worker {
         {
             return !self.cancelled();
         }
+        // Only the user's cancellation abandons queued nodes: a scan stopped at
+        // its memory budget still delivers every node it already counted.
         while self.sender.len() >= QUEUE_CAPACITY - 1 {
-            if self.cancelled() {
+            if self.cancel.load(Ordering::Relaxed) {
                 return false;
             }
-            std::thread::sleep(Duration::from_millis(10));
+            std::thread::sleep(Duration::from_millis(5));
         }
         let batch = std::mem::replace(&mut self.batch, Vec::with_capacity(BATCH_SIZE));
         if self.sender.try_send(ScanEvent::Batch(batch)).is_err() {
             self.cancel.store(true, Ordering::Relaxed);
             return false;
         }
+        (self.wake)();
         self.last_flush = Instant::now();
         !self.cancelled()
     }
@@ -557,8 +611,7 @@ fn skip_metadata(metadata: &fs::Metadata) -> Option<Skip> {
     #[cfg(target_os = "macos")]
     {
         use std::os::macos::fs::MetadataExt;
-        const SF_DATALESS: u32 = 0x4000_0000;
-        if metadata.st_flags() & SF_DATALESS != 0 {
+        if metadata.st_flags() & bulk::SF_DATALESS != 0 {
             return Some(Skip::Cloud);
         }
     }
@@ -711,27 +764,36 @@ pub(crate) fn prepare_output_directory(path: &Path) -> Result<(), String> {
     }
 }
 
-fn write_new_output_with(
-    path: &Path,
-    write: impl FnOnce(&mut File) -> Result<(), String>,
-) -> Result<(), String> {
+/// Checks that `path` can become a new output: a file name in an existing,
+/// ordinary folder, with nothing there yet. Returns the checked path.
+pub(crate) fn check_new_output(path: &Path) -> Result<PathBuf, String> {
     let path = checked_path(path)?;
     if path.file_name().is_none() {
         return Err("Choose a new file name for the output".into());
     }
     check_ancestors(&path)?;
     match fs::symlink_metadata(&path) {
-        Ok(_) => {
-            return Err(
-                "File already exists; choose a new file name. Existing files are never replaced."
-                    .into(),
-            );
-        }
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-        Err(error) => return Err(error.to_string()),
+        Ok(_) => Err(
+            "File already exists; choose a new file name. Existing files are never replaced."
+                .into(),
+        ),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(path),
+        Err(error) => Err(error.to_string()),
     }
+}
+
+fn write_new_output_with(
+    path: &Path,
+    write: impl FnOnce(&mut File) -> Result<(), String>,
+) -> Result<(), String> {
+    let path = check_new_output(path)?;
     let parent = path.parent().ok_or("Output has no parent directory")?;
-    let mut temporary = tempfile::NamedTempFile::new_in(parent).map_err(|e| e.to_string())?;
+    #[cfg_attr(not(unix), allow(unused_mut))]
+    let mut builder = tempfile::Builder::new();
+    // Like any new file: readable as the user's umask allows, not owner-only.
+    #[cfg(unix)]
+    builder.permissions(std::os::unix::fs::PermissionsExt::from_mode(0o666));
+    let mut temporary = builder.tempfile_in(parent).map_err(|e| e.to_string())?;
     write(temporary.as_file_mut())?;
     temporary.as_file().sync_all().map_err(|e| e.to_string())?;
     // No existence-check/rename race: persist_noclobber atomically refuses a
@@ -864,6 +926,7 @@ fn csv_text(text: &str) -> String {
 
 #[cfg(any(target_os = "macos", test))]
 mod bulk;
+pub mod duplicates;
 #[cfg(windows)]
 mod listing;
 #[cfg(windows)]

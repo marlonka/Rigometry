@@ -381,7 +381,7 @@ fn storage_scan_drill_down_largest_files_and_filter_use_real_results() {
             .click_accesskit();
         harness.run_steps(2);
         assert!(
-            harness.state().state.map_only,
+            harness.state().state.view == View::Map,
             "Map activation failed at {pixels:?}, scale {scale}"
         );
         let tile = harness
@@ -396,7 +396,7 @@ fn storage_scan_drill_down_largest_files_and_filter_use_real_results() {
             .click_accesskit();
         harness.run_steps(2);
         assert!(
-            !harness.state().state.map_only,
+            harness.state().state.view != View::Map,
             "Hierarchy activation failed at {pixels:?}, scale {scale}"
         );
     }
@@ -606,7 +606,7 @@ fn cancelling_and_restarting_keeps_queued_old_results_out_of_new_scan() {
         .is_some()
     {
         navigate(&mut harness, "Map");
-        assert!(harness.state().state.map_only);
+        assert_eq!(harness.state().state.view, View::Map);
     }
     // Paint the completed treemap, then start another progressive scan. Cached
     // IDs from this large tree must not be reused against a shorter first batch.
@@ -1228,4 +1228,85 @@ fn stale_chart_status_is_exposed_to_assistive_technology() {
             .query_by_role_and_label(Role::Label, "CPU: 42.0 % (stale)")
             .is_some()
     );
+}
+
+#[test]
+fn duplicates_are_found_on_request_filtered_by_search_and_cleared_by_a_new_scan() {
+    use crate::storage::duplicates::tests::{bytes, write};
+    let fixture = tempfile::tempdir().unwrap();
+    let root = fixture.path();
+    let photo = bytes(11, 200_000);
+    let notes = bytes(12, 90_000);
+    write(root.join("Camera/IMG_0001.jpg"), &photo);
+    write(root.join("Backup/IMG_0001 copy.jpg"), &photo);
+    write(root.join("Docs/notes.txt"), &notes);
+    write(root.join("Archive/notes.txt"), &notes);
+    write(root.join("Docs/other.txt"), &bytes(13, 90_000));
+
+    let mut harness = app_harness();
+    navigate(&mut harness, "Storage");
+    type_scan_path(&mut harness, root);
+    click(&harness, Role::Button, "Scan");
+    harness.step();
+    wait_for_scan(&mut harness);
+    click(&harness, Role::Button, "Duplicates");
+    harness.run_steps(2);
+    assert_eq!(harness.state().state.view, View::Duplicates);
+    assert!(
+        harness.state().state.duplicates.is_none(),
+        "contents are read only when asked"
+    );
+    // The default minimum skips these small files; choose any size.
+    harness.state_mut().state.settings.duplicate_min_size = 1;
+    click(&harness, Role::Button, "Find duplicates");
+    harness.step();
+    assert!(harness.state().state.duplicates.is_some());
+    let deadline = Instant::now() + Duration::from_secs(20);
+    while harness.state().state.duplicates_running() && Instant::now() < deadline {
+        harness.step();
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    harness.run_steps(2);
+    let found = harness.state().state.duplicates.as_ref().unwrap();
+    assert_eq!(found.summary.as_ref().unwrap().status(), "complete");
+    assert_eq!(found.groups.len(), 2);
+    // Largest savings first: the photo pair before the notes pair.
+    let first = &found.groups[found.visible[0]];
+    assert_eq!(first.size, 200_000);
+    let reveal_buttons = |harness: &Harness<'_, App>, name: &str| {
+        let label = format!("{REVEAL} {name}");
+        harness
+            .query_all(By::new().role(Role::Button).label(&label))
+            .count()
+    };
+    for (name, copies) in [
+        ("IMG_0001.jpg", 1),
+        ("IMG_0001 copy.jpg", 1),
+        ("notes.txt", 2),
+    ] {
+        assert_eq!(reveal_buttons(&harness, name), copies, "{name}");
+    }
+    assert!(
+        harness
+            .query_by_role_and_label(Role::Button, "CSV")
+            .is_some(),
+        "the report can be exported"
+    );
+
+    // The search narrows the groups to those with a matching copy.
+    click(&harness, Role::TextInput, "Search");
+    harness
+        .get_by_role_and_label(Role::TextInput, "Search")
+        .type_text("ext:jpg");
+    harness.run_steps(3);
+    let found = harness.state().state.duplicates.as_ref().unwrap();
+    assert_eq!(found.visible.len(), 1);
+    assert_eq!(found.groups[found.visible[0]].size, 200_000);
+    assert_eq!(reveal_buttons(&harness, "notes.txt"), 0);
+
+    // Results name entries of the old tree: a new scan drops them.
+    click(&harness, Role::Button, "Rescan");
+    harness.step();
+    assert!(harness.state().state.duplicates.is_none());
+    wait_for_scan(&mut harness);
 }

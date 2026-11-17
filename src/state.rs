@@ -1,7 +1,10 @@
 use crate::{
     hardware,
     model::*,
-    storage::{self, ScanEvent, ScanHandle, ScanNode, ScanSummary},
+    storage::{
+        self, ScanEvent, ScanHandle, ScanNode, ScanSummary,
+        duplicates::{self, DuplicateEvent, DuplicateGroup, DuplicateHandle, DuplicateSummary},
+    },
 };
 use crossbeam_channel::{Receiver, Sender, TryRecvError, bounded};
 use serde::{Deserialize, Serialize};
@@ -39,6 +42,8 @@ pub struct Settings {
     pub scale_revision: u8,
     pub path: String,
     pub reduce_motion: bool,
+    /// Smallest file the duplicate search reads, in bytes.
+    pub duplicate_min_size: u64,
 }
 impl Default for Settings {
     fn default() -> Self {
@@ -50,6 +55,7 @@ impl Default for Settings {
             scale_revision: 1,
             path: String::new(),
             reduce_motion: false,
+            duplicate_min_size: duplicates::DEFAULT_MIN_SIZE,
         }
     }
 }
@@ -89,7 +95,8 @@ pub struct State {
     /// The sort to restore when a search that switched to relevance ends.
     sort_before_search: Option<(Sort, bool)>,
     name_masks: crate::search::NameMasks,
-    pub largest: bool,
+    pub view: View,
+    pub duplicates: Option<Duplicates>,
     pub sort: Sort,
     pub descending: bool,
     pub visible: Vec<(usize, usize)>,
@@ -99,13 +106,49 @@ pub struct State {
     pub last_index: Instant,
     pub map_ids: Vec<usize>,
     pub map_revision: u64,
-    pub map_only: bool,
     pub adapter: usize,
     pub notice: Option<String>,
     pub task: Option<Receiver<TaskResult>>,
     receiver: Receiver<HardwareEvent>,
     stop: Arc<AtomicBool>,
+    /// Repaints the UI when a background scan or search queues results.
+    wake: storage::Wake,
 }
+/// What the storage results show below the toolbar.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum View {
+    #[default]
+    Hierarchy,
+    Largest,
+    Map,
+    Duplicates,
+}
+
+/// One duplicate search of the current scan, and what it found so far.
+pub struct Duplicates {
+    pub handle: Option<DuplicateHandle>,
+    /// The folder searched.
+    pub root: usize,
+    pub min_size: u64,
+    pub groups: Vec<DuplicateGroup>,
+    pub progress: Option<duplicates::Progress>,
+    pub summary: Option<DuplicateSummary>,
+    /// Groups to show, by index: those with a copy matching the search,
+    /// largest savings first.
+    pub visible: Vec<usize>,
+    /// Table rows: each visible group followed by its copies.
+    pub rows: Vec<DuplicateRow>,
+    dirty: bool,
+    last_index: Instant,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DuplicateRow {
+    Group(usize),
+    /// Group, then copy within it.
+    Copy(usize, usize),
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Sort {
     Name,
@@ -122,6 +165,8 @@ impl State {
         let (sender, receiver) = bounded(4);
         let stop = Arc::new(AtomicBool::new(false));
         let worker_stop = stop.clone();
+        let repaint = ctx.clone();
+        let wake: storage::Wake = Arc::new(move || repaint.request_repaint());
         let hardware_error = std::thread::Builder::new()
             .name("hardware-monitor".into())
             .spawn(move || {
@@ -156,7 +201,7 @@ impl State {
             })
             .err()
             .map(|error| format!("Could not start hardware worker: {error}"));
-        Self::with_hardware(settings, receiver, stop, hardware_error)
+        Self::with_hardware(settings, receiver, stop, hardware_error, wake)
     }
 
     fn with_hardware(
@@ -164,6 +209,7 @@ impl State {
         receiver: Receiver<HardwareEvent>,
         stop: Arc<AtomicBool>,
         hardware_error: Option<String>,
+        wake: storage::Wake,
     ) -> Self {
         Self {
             settings,
@@ -183,7 +229,8 @@ impl State {
             search_error: None,
             sort_before_search: None,
             name_masks: Default::default(),
-            largest: false,
+            view: View::Hierarchy,
+            duplicates: None,
             sort: Sort::Allocated,
             descending: true,
             visible: vec![],
@@ -192,12 +239,12 @@ impl State {
             last_index: Instant::now(),
             map_ids: vec![],
             map_revision: 0,
-            map_only: false,
             adapter: 0,
             notice: None,
             task: None,
             receiver,
             stop,
+            wake,
         }
     }
 
@@ -210,6 +257,7 @@ impl State {
             crossbeam_channel::never(),
             Arc::new(AtomicBool::new(false)),
             None,
+            Arc::new(|| {}),
         )
     }
     pub fn tick(&mut self) {
@@ -291,6 +339,7 @@ impl State {
                 None => break,
             }
         }
+        self.receive_duplicates(start);
         if self.dirty
             && (self.scan.is_none()
                 || self.urgent
@@ -339,6 +388,8 @@ impl State {
             return;
         }
         self.cancel_scan();
+        // Results name entries of the old tree; dropping them stops the search.
+        self.duplicates = None;
         self.nodes = Arc::new(vec![]);
         self.visible.clear();
         self.summary = None;
@@ -352,7 +403,10 @@ impl State {
         self.scan_started = Instant::now();
         self.notice = None;
         self.dirty = true;
-        self.scan = Some(storage::start_scan(PathBuf::from(&self.settings.path)));
+        self.scan = Some(storage::start_scan_with(
+            PathBuf::from(&self.settings.path),
+            self.wake.clone(),
+        ));
     }
     pub fn cancel_scan(&mut self) {
         if let Some(scan) = &self.scan {
@@ -410,6 +464,164 @@ impl State {
             }
         });
     }
+    /// Compares the files below the current folder. Needs a finished scan:
+    /// the search reads the tree while the UI keeps showing it.
+    pub fn find_duplicates(&mut self) {
+        if self.scan.is_some() || self.nodes.is_empty() {
+            return;
+        }
+        let min_size = self.settings.duplicate_min_size.max(1);
+        self.duplicates = Some(Duplicates {
+            handle: Some(duplicates::find(
+                self.nodes.clone(),
+                self.scope,
+                min_size,
+                self.summary.as_ref().is_none_or(|summary| {
+                    storage::subtree_partial(&self.nodes, summary, self.scope)
+                }),
+                self.wake.clone(),
+            )),
+            root: self.scope,
+            min_size,
+            groups: vec![],
+            progress: None,
+            summary: None,
+            visible: vec![],
+            rows: vec![],
+            dirty: false,
+            last_index: Instant::now(),
+        });
+    }
+
+    pub fn duplicates_running(&self) -> bool {
+        self.duplicates.as_ref().is_some_and(|d| d.handle.is_some())
+    }
+
+    pub fn cancel_duplicates(&mut self) {
+        if let Some(handle) = self.duplicates.as_ref().and_then(|d| d.handle.as_ref()) {
+            handle.cancel.store(true, Ordering::Relaxed);
+        }
+    }
+
+    /// Takes the duplicate search's events for the rest of this frame's budget.
+    fn receive_duplicates(&mut self, start: Instant) {
+        let Some(found) = &mut self.duplicates else {
+            return;
+        };
+        while let Some(handle) = &found.handle {
+            let event = match handle.receiver.try_recv() {
+                Ok(event) => event,
+                Err(TryRecvError::Empty) => break,
+                Err(TryRecvError::Disconnected) => DuplicateEvent::Finished(DuplicateSummary {
+                    root: found.root,
+                    min_size: found.min_size,
+                    cancelled: handle.cancel.load(Ordering::Relaxed),
+                    errors: 1,
+                    notes: vec![
+                        "Duplicate search stopped before completion; results are incomplete".into(),
+                    ],
+                    ..Default::default()
+                }),
+            };
+            match event {
+                DuplicateEvent::Progress(progress) => found.progress = Some(progress),
+                DuplicateEvent::Groups(groups) => {
+                    found.groups.extend(groups);
+                    found.dirty = true;
+                }
+                DuplicateEvent::Finished(summary) => {
+                    found.summary = Some(summary);
+                    found.handle = None;
+                    found.dirty = true;
+                }
+            }
+            if start.elapsed() > Duration::from_millis(8) {
+                break;
+            }
+        }
+        if found.dirty
+            && (found.handle.is_none()
+                || self.urgent
+                || found.last_index.elapsed() > Duration::from_millis(400))
+        {
+            self.rebuild_duplicates();
+        }
+    }
+
+    /// Filters the groups by the search and orders them by savings.
+    pub fn rebuild_duplicates(&mut self) {
+        let Some(found) = &mut self.duplicates else {
+            return;
+        };
+        found.dirty = false;
+        found.last_index = Instant::now();
+        let groups = &found.groups;
+        // An invalid search shows its error and no groups, as the table does.
+        let Ok(query) = crate::search::Query::parse(&self.filter) else {
+            found.visible.clear();
+            found.rows.clear();
+            return;
+        };
+        let mut visible: Vec<usize> = if query.is_empty() {
+            (0..groups.len()).collect()
+        } else {
+            let masks = self.name_masks.update(&self.nodes, self.scan_generation);
+            let mut matches = vec![false; self.nodes.len()];
+            for hit in query.search(&self.nodes, masks, found.root) {
+                matches[hit.id] = true;
+            }
+            (0..groups.len())
+                .filter(|&g| groups[g].copies.iter().any(|copy| matches[copy.id]))
+                .collect()
+        };
+        visible.sort_by_key(|&g| groups[g].order());
+        found.rows.clear();
+        for &g in &visible {
+            found.rows.push(DuplicateRow::Group(g));
+            found
+                .rows
+                .extend((0..groups[g].copies.len()).map(|c| DuplicateRow::Copy(g, c)));
+        }
+        found.visible = visible;
+    }
+
+    pub fn export_duplicates(&mut self, format: &str) {
+        let Some(found) = &self.duplicates else {
+            return;
+        };
+        let Some(summary) = found.summary.clone() else {
+            return;
+        };
+        if self.task.is_some() {
+            return;
+        }
+        let nodes = self.nodes.clone();
+        let groups: Vec<_> = found
+            .visible
+            .iter()
+            .map(|&g| found.groups[g].clone())
+            .collect();
+        let format = format.to_owned();
+        let language = self.settings.language.resolve();
+        self.spawn_task("duplicates-export", move |tx| {
+            if let Some(path) = rfd::FileDialog::new()
+                .set_title(language.text("Export duplicates"))
+                .add_filter(format.to_uppercase(), &[&format])
+                .set_file_name(format!("rigometry-duplicates.{format}"))
+                .save_file()
+            {
+                let result = if format == "csv" {
+                    duplicates::export_csv(&path, &nodes, &groups, &summary)
+                } else {
+                    duplicates::export_json(&path, &nodes, &groups, &summary)
+                };
+                let _ = tx.send(TaskResult::Export(result.map(|_| path)));
+            } else {
+                let _ = tx.send(TaskResult::Cancelled);
+            }
+        });
+    }
+
     pub fn export_hardware(&mut self) {
         if self.task.is_some() {
             return;
@@ -463,6 +675,9 @@ impl State {
     pub fn refresh_now(&mut self) {
         self.dirty = true;
         self.urgent = true;
+        if let Some(found) = &mut self.duplicates {
+            found.dirty = true;
+        }
     }
     pub fn rebuild_visible(&mut self) {
         self.visible.clear();
@@ -509,10 +724,11 @@ impl State {
             };
             order.then_with(|| a.name.cmp(&b.name))
         };
-        if self.largest || !query.is_empty() {
+        let largest = self.view == View::Largest;
+        if largest || !query.is_empty() {
             let masks = self.name_masks.update(&self.nodes, self.scan_generation);
             let mut hits = query.search(&self.nodes, masks, self.scope);
-            if self.largest {
+            if largest {
                 hits.retain(|hit| !self.nodes[hit.id].is_dir);
             }
             if self.sort == Sort::Relevance {
@@ -610,6 +826,7 @@ impl Drop for State {
     fn drop(&mut self) {
         self.stop.store(true, Ordering::Relaxed);
         self.cancel_scan();
+        self.cancel_duplicates();
     }
 }
 

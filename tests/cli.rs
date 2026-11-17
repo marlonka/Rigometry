@@ -150,3 +150,65 @@ fn headless_scan_routes_formats_and_refuses_existing_destinations() {
     assert!(!result.status.success());
     assert_eq!(fs::read(&source).unwrap(), contents);
 }
+
+#[test]
+fn headless_duplicate_report_lists_copies_and_failures_exit_nonzero() {
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path().join("tree");
+    fs::create_dir_all(root.join("a")).unwrap();
+    fs::create_dir_all(root.join("b")).unwrap();
+    let data: Vec<u8> = (0..100_000u32).map(|i| (i * 7 % 251) as u8).collect();
+    fs::write(root.join("a/report.pdf"), &data).unwrap();
+    fs::write(root.join("b/report (1).pdf"), &data).unwrap();
+    fs::write(root.join("b/small.txt"), b"tiny").unwrap();
+    fs::write(root.join("a/small.txt"), b"tiny").unwrap();
+    let report = directory.path().join("duplicates.json");
+    let result = run(&[
+        "--headless".as_ref(),
+        "--scan".as_ref(),
+        root.as_os_str(),
+        "--duplicates".as_ref(),
+        report.as_os_str(),
+        "--min-size".as_ref(),
+        "64k".as_ref(),
+    ]);
+    assert!(result.status.success(), "{:?}", result.stderr);
+    let json: serde_json::Value = serde_json::from_slice(&fs::read(&report).unwrap()).unwrap();
+    assert_eq!(json["kind"], "duplicates");
+    assert_eq!(json["status"], "complete");
+    let groups = json["groups"].as_array().unwrap();
+    assert_eq!(groups.len(), 1, "files below --min-size are not compared");
+    assert_eq!(groups[0]["size"], 100_000);
+    assert_eq!(groups[0]["copies"].as_array().unwrap().len(), 2);
+    assert_eq!(json["summary"]["below_minimum"], 2);
+
+    // A root that cannot be scanned fails instead of exporting an empty tree.
+    let missing = directory.path().join("missing");
+    let output = directory.path().join("missing.json");
+    let result = run(&[
+        "--headless".as_ref(),
+        "--scan".as_ref(),
+        missing.as_os_str(),
+        "--export".as_ref(),
+        output.as_os_str(),
+    ]);
+    assert!(!result.status.success());
+    assert!(!output.exists());
+
+    // An unusable output is refused before any scanning or reporting.
+    let earlier = directory.path().join("hardware.json");
+    let result = run(&[
+        "--headless".as_ref(),
+        "--report".as_ref(),
+        earlier.as_os_str(),
+        "--scan".as_ref(),
+        root.as_os_str(),
+        "--duplicates".as_ref(),
+        report.as_os_str(),
+    ]);
+    assert!(!result.status.success());
+    assert!(
+        !earlier.exists(),
+        "no output is written when another is refused"
+    );
+}

@@ -135,6 +135,8 @@ impl Language {
                     | "SMBIOS parse: {0}"
                     | "CPU topology: {0}"
                     | "Hardware sampling failed during capture: {0}"
+                    | "Scan failed: {0}"
+                    | "Could not start duplicate search: {0}"
                     | "MFT fast path unavailable: {0}. Standard enumeration used; no elevation requested."
                     | "{0} exceed the u64 limit; reported size is a lower bound" => &[0],
                     "NVML status {0}: {1}"

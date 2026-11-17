@@ -30,8 +30,8 @@ fn validate_arguments(args: &[String]) -> Result<(), String> {
         match flag.as_str() {
             "--headless" => index += 1,
             "--help" | "--version" => index += 1,
-            "--scan" | "--export" | "--report" | "--capture" | "--window-size" | "--theme"
-            | "--scale" | "--language" => {
+            "--scan" | "--export" | "--duplicates" | "--min-size" | "--report" | "--capture"
+            | "--window-size" | "--theme" | "--scale" | "--language" => {
                 let value = args
                     .get(index + 1)
                     .filter(|value| !value.is_empty() && !value.starts_with("--"))
@@ -41,10 +41,19 @@ fn validate_arguments(args: &[String]) -> Result<(), String> {
                         return Err("--language requires system, en, de, fr or es".into());
                     }
                     "--window-size" if requested_window_size(args).is_none() => {
-                        return Err("--window-size requires positive finite WIDTHxHEIGHT".into());
+                        return Err(
+                            "--window-size requires WIDTHxHEIGHT from 1080x720 to 3840x2160".into(),
+                        );
                     }
-                    "--scale" if !value.parse::<f32>().is_ok_and(|n| n.is_finite() && n > 0.) => {
-                        return Err("--scale requires a positive finite number".into());
+                    "--scale"
+                        if !value
+                            .parse::<f32>()
+                            .is_ok_and(|n| (0.85..=1.5).contains(&n)) =>
+                    {
+                        return Err("--scale requires a number from 0.85 to 1.5".into());
+                    }
+                    "--min-size" if search::parse_size(value).is_err() => {
+                        return Err("--min-size requires a size such as 4k, 1m or 2gb".into());
                     }
                     "--theme" if !matches!(value.as_str(), "Dark" | "Light" | "System") => {
                         return Err("--theme requires Dark, Light or System".into());
@@ -80,11 +89,26 @@ fn validate_arguments(args: &[String]) -> Result<(), String> {
         if !seen.contains("--report") && !seen.contains("--scan") {
             return Err("--headless requires --report or --scan with --export".into());
         }
-        if seen.contains("--scan") != seen.contains("--export") {
-            return Err("Headless scans require both --scan and --export".into());
+        let exports = seen.contains("--export") || seen.contains("--duplicates");
+        if seen.contains("--scan") != exports {
+            return Err("Headless scans require --scan with --export or --duplicates".into());
         }
-    } else if seen.contains("--report") || seen.contains("--export") {
-        return Err("--report and --export require --headless".into());
+        if seen.contains("--min-size") && !seen.contains("--duplicates") {
+            return Err("--min-size requires --duplicates".into());
+        }
+        let outputs: Vec<_> = ["--report", "--export", "--duplicates"]
+            .into_iter()
+            .filter_map(|flag| argument(args, flag))
+            .map(|path| std::path::absolute(&path).unwrap_or_else(|_| path.into()))
+            .collect();
+        if (1..outputs.len()).any(|i| outputs[..i].contains(&outputs[i])) {
+            return Err("Each output needs its own file name".into());
+        }
+    } else if ["--report", "--export", "--duplicates", "--min-size"]
+        .iter()
+        .any(|flag| seen.contains(flag))
+    {
+        return Err("--report, --export and --duplicates require --headless".into());
     }
     Ok(())
 }
@@ -94,8 +118,8 @@ fn requested_window_size(args: &[String]) -> Option<eframe::egui::Vec2> {
     let (width, height) = value.split_once('x')?;
     let width = width.parse::<f32>().ok()?;
     let height = height.parse::<f32>().ok()?;
-    (width.is_finite() && height.is_finite() && width > 0. && height > 0.)
-        .then(|| eframe::egui::vec2(width.clamp(1080., 3840.), height.clamp(720., 2160.)))
+    ((1080. ..=3840.).contains(&width) && (720. ..=2160.).contains(&height))
+        .then(|| eframe::egui::vec2(width, height))
 }
 /// Release builds use the GUI subsystem, so a terminal gives them no console:
 /// `--help`, `--version` and errors would print nothing. Attach to the
@@ -114,11 +138,17 @@ fn attach_parent_console() {
 }
 
 fn main() {
+    // Only text-mode commands attach: a window attached to the terminal it was
+    // started from would close with it, without saving its settings.
     #[cfg(all(windows, not(debug_assertions)))]
-    if std::env::args_os().len() > 1 {
+    if std::env::args_os().any(|arg| {
+        ["--help", "--version", "--headless"].contains(&arg.to_str().unwrap_or_default())
+    }) {
         attach_parent_console();
     }
     if let Err(error) = run() {
+        #[cfg(all(windows, not(debug_assertions)))]
+        attach_parent_console();
         let args: Vec<_> = std::env::args_os()
             .filter_map(|arg| arg.into_string().ok())
             .collect();
@@ -156,6 +186,14 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 "Export a scan (.csv, otherwise JSON)",
             ),
             (
+                "--headless --scan PATH --duplicates FILE",
+                "Export duplicate files (.csv, otherwise JSON)",
+            ),
+            (
+                "--min-size SIZE",
+                "Smallest file compared for duplicates (default 1m)",
+            ),
+            (
                 "--headless --report FILE",
                 "Export hardware inventory and readings",
             ),
@@ -172,7 +210,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             ("--window-size WIDTHxHEIGHT", "Set window dimensions"),
             ("--version", "Print the application version"),
         ] {
-            println!("  {flags:<39} {}", language.text(description));
+            println!("  {flags:<41} {}", language.text(description));
         }
         println!(
             "{}",
@@ -225,7 +263,21 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 fn headless(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
-    if let Some(report) = argument(args, "--report") {
+    let output = |flag| argument(args, flag).map(PathBuf::from);
+    let (report, export, duplicates) = (
+        output("--report"),
+        output("--export"),
+        output("--duplicates"),
+    );
+    // Refuse unusable outputs before minutes of scanning, not after.
+    for path in [&report, &export, &duplicates].into_iter().flatten() {
+        storage::check_new_output(path)?;
+    }
+    let scanned = match argument(args, "--scan") {
+        Some(path) => Some(headless_scan(PathBuf::from(path))?),
+        None => None,
+    };
+    if let Some(report) = report {
         let started = std::time::Instant::now();
         let inventory = hardware::discover();
         let discovery_ms = started.elapsed().as_millis();
@@ -234,35 +286,68 @@ fn headless(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         std::thread::sleep(Duration::from_secs(1));
         let sample = monitor.sample();
         let data = serde_json::json!({"schema_version":1,"discovery_ms":discovery_ms,"inventory":inventory,"sample":sample});
-        storage::write_new_output(
-            std::path::Path::new(&report),
-            &serde_json::to_vec_pretty(&data)?,
-        )?;
+        storage::write_new_output(&report, &serde_json::to_vec_pretty(&data)?)?;
     }
-    if let Some(path) = argument(args, "--scan") {
-        let output =
-            argument(args, "--export").ok_or("--scan requires --export in headless mode")?;
-        let scan = storage::start_scan(PathBuf::from(path));
-        let mut nodes = vec![];
-        let mut summary = loop {
-            match scan.receiver.recv()? {
-                storage::ScanEvent::Batch(batch) => state::append_batch(&mut nodes, batch),
-                storage::ScanEvent::Finished(summary) => break summary,
-            }
-        };
-        let target = PathBuf::from(output);
-        state::finalize_scan(&mut nodes, &mut summary);
-        if target
-            .extension()
-            .and_then(|e| e.to_str())
-            .is_some_and(|e| e.eq_ignore_ascii_case("csv"))
-        {
+    let Some((nodes, summary)) = scanned else {
+        return Ok(());
+    };
+    if let Some(target) = export {
+        if is_csv(&target) {
             storage::export_csv(&target, &nodes, Some(&summary))?;
         } else {
             storage::export_json(&target, &nodes, Some(&summary))?;
         }
     }
+    if let Some(target) = duplicates {
+        let min_size = argument(args, "--min-size")
+            .and_then(|size| search::parse_size(&size).ok())
+            .unwrap_or(storage::duplicates::DEFAULT_MIN_SIZE);
+        let nodes = Arc::new(nodes);
+        let partial = storage::subtree_partial(&nodes, &summary, 0);
+        let search =
+            storage::duplicates::find(nodes.clone(), 0, min_size, partial, Arc::new(|| {}));
+        let mut groups = vec![];
+        let summary = loop {
+            match search.receiver.recv()? {
+                storage::duplicates::DuplicateEvent::Groups(found) => groups.extend(found),
+                storage::duplicates::DuplicateEvent::Progress(_) => {}
+                storage::duplicates::DuplicateEvent::Finished(summary) => break summary,
+            }
+        };
+        groups.sort_by_key(storage::duplicates::DuplicateGroup::order);
+        if is_csv(&target) {
+            storage::duplicates::export_csv(&target, &nodes, &groups, &summary)?;
+        } else {
+            storage::duplicates::export_json(&target, &nodes, &groups, &summary)?;
+        }
+    }
     Ok(())
+}
+
+/// Scans `path` to completion. A scan that could not read its root at all
+/// fails the command instead of exporting an empty tree as success.
+fn headless_scan(
+    path: PathBuf,
+) -> Result<(Vec<storage::ScanNode>, storage::ScanSummary), Box<dyn std::error::Error>> {
+    let scan = storage::start_scan(path);
+    let mut nodes = vec![];
+    let mut summary = loop {
+        match scan.receiver.recv()? {
+            storage::ScanEvent::Batch(batch) => state::append_batch(&mut nodes, batch),
+            storage::ScanEvent::Finished(summary) => break summary,
+        }
+    };
+    if let Some(reason) = storage::root_failure(&nodes, &summary) {
+        return Err(format!("Scan failed: {reason}").into());
+    }
+    state::finalize_scan(&mut nodes, &mut summary);
+    Ok((nodes, summary))
+}
+
+fn is_csv(path: &std::path::Path) -> bool {
+    path.extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| e.eq_ignore_ascii_case("csv"))
 }
 
 #[cfg(test)]
@@ -281,8 +366,30 @@ mod cli_tests {
             vec!["--report", "out.json"],
             vec!["--capture", "shots", "--capture", "other"],
             vec!["--scale", "NaN"],
+            vec!["--scale", "4"],
             vec!["--window-size", "infx720"],
             vec!["--window-size", "-1x720"],
+            vec!["--window-size", "10x10"],
+            vec!["--headless", "--scan", "folder", "--min-size", "1m"],
+            vec![
+                "--headless",
+                "--scan",
+                "f",
+                "--duplicates",
+                "d.json",
+                "--min-size",
+                "lots",
+            ],
+            vec!["--duplicates", "d.json"],
+            vec![
+                "--headless",
+                "--report",
+                "same.json",
+                "--scan",
+                "f",
+                "--export",
+                "same.json",
+            ],
             vec!["--theme", "typo"],
             vec!["--version", "--scan", "folder"],
         ] {
@@ -311,6 +418,15 @@ mod cli_tests {
                 "folder",
                 "--export",
                 "scan.json",
+            ],
+            vec![
+                "--headless",
+                "--scan",
+                "folder",
+                "--duplicates",
+                "copies.csv",
+                "--min-size",
+                "4k",
             ],
             vec![
                 "--capture",
