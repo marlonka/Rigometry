@@ -384,7 +384,7 @@ impl Name {
                 mask |= start_bit(f);
                 word_start = false;
             }
-            word_start |= c == ' ';
+            word_start |= word_break(c);
             self.raw.push(c);
             self.folded.push(f);
         }
@@ -418,12 +418,8 @@ fn ascii_mask(s: &str) -> Option<u64> {
     if let Some(&b) = bytes.get(off) {
         mask |= start_bit(b as char);
     }
-    if mask & char_bit(' ') != 0 {
-        for (i, _) in bytes.iter().enumerate().filter(|(_, b)| **b == b' ') {
-            if let Some(&b) = bytes.get(i + 1) {
-                mask |= start_bit(b as char);
-            }
-        }
+    for pair in bytes.windows(2).filter(|pair| word_break(pair[0] as char)) {
+        mask |= start_bit(pair[1] as char);
     }
     Some(mask)
 }
@@ -557,6 +553,12 @@ const fn char_bit(c: char) -> u64 {
 
 /// The mask bit for a word starting with `c` (bits 41..64).
 #[inline]
+/// Characters after which a new word starts for typo tolerance: file names
+/// separate words with spaces, underscores and hyphens alike.
+fn word_break(c: char) -> bool {
+    matches!(c, ' ' | '_' | '-')
+}
+
 fn start_bit(c: char) -> u64 {
     1 << (41 + fold(c) as u32 % 23)
 }
@@ -673,15 +675,13 @@ fn fuzzy_score(name: &Name, q: &[char], cap: i32) -> Option<i32> {
 }
 
 /// Best score for `q` read with one typo at the start of the name or of a
-/// space-separated word in it, scored as if typed correctly minus
+/// word in it (after a space, underscore or hyphen), scored as if typed correctly minus
 /// TYPO_COST, and never placed above a prefix.
 fn typo_score(name: &Name, q: &[char]) -> Option<i32> {
     let off = leading_dot(&name.raw, q);
     let mut best = typo_at(name, off, q);
-    if name.mask & char_bit(' ') != 0 {
-        for (i, _) in name.raw.iter().enumerate().filter(|(_, c)| **c == ' ') {
-            best = best.max(typo_at(name, i + 1, q));
-        }
+    for (i, _) in name.raw.iter().enumerate().filter(|(_, c)| word_break(**c)) {
+        best = best.max(typo_at(name, i + 1, q));
     }
     best
 }
@@ -949,6 +949,13 @@ mod tests {
             ["holiday main cut.mp4"],
             "a quoted phrase does not match scattered letters"
         );
+    }
+
+    #[test]
+    fn typos_are_forgiven_after_underscores_and_hyphens_too() {
+        for name in ["2024 report.docx", "2024_report.docx", "2024-report.docx"] {
+            assert!(score(name, "reprot").is_some(), "{name}");
+        }
     }
 
     #[test]
