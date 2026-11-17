@@ -156,8 +156,10 @@ impl Language {
             }
         }
         if depth < 4 {
-            // Scan diagnostics concatenate authored notes or prefix them with a path.
-            if source.contains("; ") {
+            // Scan diagnostics concatenate authored notes or prefix them with a
+            // path. Split only notes made entirely of authored parts: a file
+            // name may contain "; " too, and paths are never translated.
+            if source.contains("; ") && source.split("; ").all(authored) {
                 return source
                     .split("; ")
                     .map(|part| self.message_inner(part, depth + 1))
@@ -198,17 +200,9 @@ impl Language {
     }
 
     pub fn bytes(self, value: u64) -> String {
-        const UNITS: [&str; 5] = ["B", "KiB", "MiB", "GiB", "TiB"];
-        let mut n = value as f64;
-        let mut unit = 0;
-        while n >= 1024. && unit < 4 {
-            n /= 1024.;
-            unit += 1;
-        }
-        if unit == 0 {
-            format!("{} B", self.integer(value))
-        } else {
-            format!("{} {}", self.decimal(n, 2), UNITS[unit])
+        match crate::model::binary_units(value) {
+            (_, "B") => format!("{} B", self.integer(value)),
+            (n, unit) => format!("{} {unit}", self.decimal(n, 2)),
         }
     }
 }
@@ -230,11 +224,18 @@ fn system_locale() -> String {
     {
         return first.to_owned();
     }
+    // The first one set decides, as for every POSIX program: LC_ALL=C means
+    // English even when LANG names another language.
     ["LC_ALL", "LC_MESSAGES", "LANG"]
         .into_iter()
         .filter_map(|name| std::env::var(name).ok())
-        .find(|value| !value.is_empty() && value != "C" && value != "POSIX")
+        .find(|value| !value.is_empty())
         .unwrap_or_default()
+}
+
+/// A catalog message, or a template filled with arguments.
+fn authored(part: &str) -> bool {
+    catalog().contains_key(part) || patterns().iter().any(|p| capture(p, part).is_some())
 }
 
 fn patterns() -> &'static Vec<&'static str> {
@@ -423,6 +424,9 @@ mod tests {
             Language::French.message("Sparse; NTFS compressed"),
             "Fichier creux; Compressé NTFS"
         );
+        // A path may contain "; " and words from the catalog; it stays as typed.
+        let path = "/data/a; Complete; Files/r.json: No such file or directory";
+        assert_eq!(Language::German.message(path), path);
         assert_eq!(
             Language::Spanish
                 .message("NVML status 3: not supported by this GPU/driver or API symbol absent"),

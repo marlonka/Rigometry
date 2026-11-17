@@ -188,7 +188,7 @@
   [
     "Bank",
     "Speicherbank",
-    "Banque",
+    "Banc",
     "Banco"
   ],
   [
@@ -855,13 +855,13 @@
     "Core clock",
     "Kerntakt",
     "Fréquence du cœur",
-    "Reloj del núcleo"
+    "Frecuencia del núcleo"
   ],
   [
     "No graphics adapters reported by the system",
-    "Das System meldet keine Grafikadapter",
-    "Le système ne signale aucun adaptateur graphique",
-    "El sistema no informa de adaptadores gráficos"
+    "Das System meldet keine Grafikkarte",
+    "Le système ne signale aucune carte graphique",
+    "El sistema no informa de ninguna tarjeta gráfica"
   ],
   [
     "macOS reported no graphics processor.",

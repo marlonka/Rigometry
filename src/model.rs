@@ -174,18 +174,23 @@ pub struct Telemetry {
     pub gpus: Vec<GpuSample>,
 }
 
-pub fn bytes(value: u64) -> String {
+/// `value` in the largest binary unit that keeps it at least 1, as shown with
+/// two decimals: 1,048,575 bytes is "1.00 MiB", never "1024.00 KiB".
+pub fn binary_units(value: u64) -> (f64, &'static str) {
     const UNITS: [&str; 5] = ["B", "KiB", "MiB", "GiB", "TiB"];
     let mut n = value as f64;
     let mut unit = 0;
-    while n >= 1024.0 && unit < 4 {
+    while unit < UNITS.len() - 1 && (n >= 1024.0 || (unit > 0 && n >= 1023.995)) {
         n /= 1024.0;
         unit += 1;
     }
-    if unit == 0 {
-        format!("{value} B")
-    } else {
-        format!("{n:.2} {}", UNITS[unit])
+    (n, UNITS[unit])
+}
+
+pub fn bytes(value: u64) -> String {
+    match binary_units(value) {
+        (_, "B") => format!("{value} B"),
+        (n, unit) => format!("{n:.2} {unit}"),
     }
 }
 
@@ -211,5 +216,8 @@ mod tests {
     fn binary_units_are_explicit() {
         assert_eq!(bytes(1_073_741_824), "1.00 GiB");
         assert_eq!(bytes(0), "0 B");
+        assert_eq!(bytes(1023), "1023 B");
+        assert_eq!(bytes(1_048_575), "1.00 MiB", "never 1024.00 KiB");
+        assert_eq!(bytes(1_048_570), "1023.99 KiB");
     }
 }

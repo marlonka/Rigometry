@@ -801,7 +801,7 @@
     "{0}: reparse/symlink or cloud ancestor excluded",
     "{0}: übergeordneter Analysepunkt/Symlink oder Cloudordner ausgeschlossen",
     "{0} : parent point d’analyse/lien symbolique ou cloud exclu",
-    "{0}: ancestro de reanálisis/enlace simbólico o nube excluido"
+    "{0}: elemento superior excluido por ser un punto de reanálisis, un enlace simbólico o un elemento en la nube"
   ],
   [
     "{0}: ancestor is not a directory",
@@ -1155,7 +1155,7 @@
     "{0} is drive-relative; include a backslash after the drive letter, for example {1}\\",
     "{0} ist laufwerksrelativ; nach dem Laufwerksbuchstaben fehlt ein Backslash, zum Beispiel {1}\\",
     "{0} est relatif au lecteur ; ajoutez une barre oblique inverse après la lettre de lecteur, par exemple {1}\\",
-    "{0} es relativa a la unidad; añada una barra invertida tras la letra de unidad, por ejemplo {1}\\"
+    "{0} es relativa a la unidad; añade una barra invertida tras la letra de unidad, por ejemplo {1}\\"
   ],
   ["The scan of this folder is partial; files it did not reach were not compared.", "Die Analyse dieses Ordners ist unvollständig; Dateien, die sie nicht erreicht hat, wurden nicht verglichen.", "L’analyse de ce dossier est partielle ; les fichiers qu’elle n’a pas atteints n’ont pas été comparés.", "El análisis de esta carpeta es parcial; los archivos a los que no llegó no se compararon."],
   ["ReFS can share blocks between copies (block cloning); deleting a copy can free less than shown.", "ReFS kann Blöcke zwischen Kopien teilen (Blockklonen); das Löschen einer Kopie kann weniger freigeben als angezeigt.", "ReFS peut partager des blocs entre copies (clonage de blocs) ; supprimer une copie peut libérer moins que l’espace indiqué.", "ReFS puede compartir bloques entre copias (clonación de bloques); eliminar una copia puede liberar menos de lo indicado."],
