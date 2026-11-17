@@ -61,7 +61,9 @@ impl App {
                 .storage
                 .and_then(|storage| eframe::get_value(storage, "update"))
                 .unwrap_or_default();
-            app.state.updates = Some(crate::state::Updates::new(record));
+            // An elevated copy would start the new version elevated too.
+            let elevated = cfg!(windows) && elevated();
+            app.state.updates = Some(crate::state::Updates::new(record, elevated));
             if let Some(from) = updated_from {
                 app.state.notice = Some(format!(
                     "Updated from {from} to {}",
@@ -2299,6 +2301,15 @@ impl App {
             if ui.button(tx(ui, "Cancel")).clicked() {
                 action = Some("cancel");
             }
+        } else if updates.ready.is_some() {
+            ui.label(
+                RichText::new(tx(ui, "The new version is installed"))
+                    .size(16.)
+                    .strong(),
+            );
+            if ui.button(tx(ui, "Restart now")).clicked() {
+                action = Some("restart");
+            }
         } else if let Some(release) = updates.offered() {
             ui.label(
                 RichText::new(td(ui, format!("Version {} is available", release.version)))
@@ -2347,6 +2358,7 @@ impl App {
             );
         }
         if updates.installing.is_none()
+            && updates.ready.is_none()
             && ui
                 .add_enabled(!updates.checking(), Button::new(tx(ui, "Check now")))
                 .clicked()
@@ -2358,6 +2370,12 @@ impl App {
             Some("cancel") => self.state.cancel_update(),
             Some("skip") => self.state.skip_update(),
             Some("check") => self.state.check_updates(true),
+            Some("restart") => {
+                if let Some(updates) = &mut self.state.updates {
+                    updates.error = None;
+                    updates.restart = true;
+                }
+            }
             Some("page") => {
                 let url = self
                     .state
@@ -2382,15 +2400,18 @@ impl App {
         let Some(updates) = &mut self.state.updates else {
             return;
         };
-        if let Some(program) = updates.ready.take() {
-            updates.installing = None;
+        if updates.restart
+            && let Some(program) = &updates.ready
+        {
+            updates.restart = false;
             // Asked to close meanwhile: the new version is in place for next time.
             if self.close_after_update {
                 ctx.send_viewport_cmd(ViewportCommand::Close);
                 return;
             }
-            match crate::update::launch(&program, env!("CARGO_PKG_VERSION")) {
+            match crate::update::launch(program, env!("CARGO_PKG_VERSION")) {
                 Ok(()) => ctx.send_viewport_cmd(ViewportCommand::Close),
+                // The new version is in place; the user can start it again or later.
                 Err(error) => updates.error = Some(error),
             }
             return;

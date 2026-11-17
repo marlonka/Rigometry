@@ -1324,14 +1324,16 @@ fn a_newer_release_is_announced_and_installs_only_where_it_can() {
             url: "https://github.com/marlonka/Rigometry/releases/download/v99.0.0/x.zip".into(),
             size: 8 << 20,
             sha256: Some("a".repeat(64)),
-            sums_url: None,
         }),
     };
-    let mut updates = crate::state::Updates::new(crate::update::Record {
-        checked_at: Some(now_ms()),
-        release: Some(release),
-        ..Default::default()
-    });
+    let mut updates = crate::state::Updates::new(
+        crate::update::Record {
+            checked_at: Some(now_ms()),
+            release: Some(release),
+            ..Default::default()
+        },
+        false,
+    );
     // A build from the code never replaces itself, whatever the system.
     updates.target = crate::update::Target::Fixed("This copy was built from the source code");
     harness.state_mut().state.updates = Some(updates);
@@ -1380,4 +1382,26 @@ fn a_newer_release_is_announced_and_installs_only_where_it_can() {
             .query_by_role_and_label(Role::Button, "Release page")
             .is_some()
     );
+    // Installed, but not started, for example because starting it failed:
+    // the user can restart into it, and nothing offers to download it again.
+    harness.state_mut().state.updates.as_mut().unwrap().ready = Some("new-version".into());
+    harness.run_steps(2);
+    assert!(
+        harness
+            .query_by_role_and_label(Role::Label, "The new version is installed")
+            .is_some()
+    );
+    assert!(
+        harness
+            .query_by_role_and_label(Role::Button, "Restart now")
+            .is_some()
+    );
+    for gone in ["Update and restart", "Check now"] {
+        assert!(
+            harness
+                .query_by_role_and_label(Role::Button, gone)
+                .is_none(),
+            "{gone}"
+        );
+    }
 }

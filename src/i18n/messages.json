@@ -216,5 +216,8 @@
   ["Move Rigometry to Applications to update it from the app", "Rigometry nach „Programme“ verschieben, um es aus der App heraus zu aktualisieren", "Déplacez Rigometry dans Applications pour le mettre à jour depuis l’app", "Mueve Rigometry a Aplicaciones para actualizarlo desde la app"],
   ["Rigometry is not running from its app", "Rigometry läuft nicht aus seiner App heraus", "Rigometry ne s’exécute pas depuis son app", "Rigometry no se está ejecutando desde su app"],
   ["Updates are not available on this system", "Updates sind auf diesem System nicht verfügbar", "Les mises à jour ne sont pas disponibles sur ce système", "Las actualizaciones no están disponibles en este sistema"],
-  ["Rigometry cannot find its own program", "Rigometry findet sein eigenes Programm nicht", "Rigometry ne trouve pas son propre programme", "Rigometry no encuentra su propio programa"]
+  ["Rigometry cannot find its own program", "Rigometry findet sein eigenes Programm nicht", "Rigometry ne trouve pas son propre programme", "Rigometry no encuentra su propio programa"],
+  ["Restart Rigometry without administrator rights to update it", "Rigometry ohne Administratorrechte neu starten, um es zu aktualisieren", "Redémarrez Rigometry sans droits d’administrateur pour le mettre à jour", "Reinicia Rigometry sin derechos de administrador para actualizarlo"],
+  ["The new version is installed", "Die neue Version ist installiert", "La nouvelle version est installée", "La nueva versión está instalada"],
+  ["Restart now", "Jetzt neu starten", "Redémarrer maintenant", "Reiniciar ahora"]
 ]

@@ -15,9 +15,9 @@ fn answer(tag: &str) -> Value {
         "assets": [
             {"name": windows, "size": 10, "browser_download_url": download(&windows),
              "digest": format!("sha256:{}", "A".repeat(64))},
-            {"name": format!("{windows}.sha256"), "size": 1, "browser_download_url": download(&format!("{windows}.sha256"))},
+            {"name": format!("Rigometry-{version}-windows-x64-latest.zip"), "size": 1,
+             "browser_download_url": download(&format!("Rigometry-{version}-windows-x64-latest.zip"))},
             {"name": mac, "size": 20, "browser_download_url": download(&mac)},
-            {"name": format!("{mac}.sha256"), "size": 1, "browser_download_url": download(&format!("{mac}.sha256"))},
             {"name": "evil.zip", "size": 5, "browser_download_url": "https://evil.example/evil.zip"},
         ],
     })
@@ -43,17 +43,18 @@ fn versions_compare_as_numbers_and_suffixes_are_no_release() {
 }
 
 #[test]
-fn each_platform_takes_its_own_download_with_its_checksums() {
+fn each_platform_takes_its_own_download_with_its_checksum() {
     let windows = parse_release_for(&answer("v0.5.0"), Platform::Windows).unwrap();
     let asset = windows.asset.unwrap();
-    assert!(asset.name.starts_with("Rigometry-0.5.0-windows-x64"));
+    assert_eq!(
+        asset.name, "Rigometry-0.5.0-windows-x64-20261117T073000000Z.zip",
+        "only the packaged file's exact name counts"
+    );
     assert_eq!(asset.sha256.as_deref(), Some("a".repeat(64).as_str()));
-    assert!(asset.sums_url.unwrap().ends_with(".zip.sha256"));
     let mac = parse_release_for(&answer("v0.5.0"), Platform::MacOs).unwrap();
     let asset = mac.asset.unwrap();
     assert_eq!(asset.name, "Rigometry-0.5.0-macos-universal.zip");
-    assert_eq!(asset.sha256, None, "no digest: the .sha256 file is used");
-    assert!(asset.sums_url.is_some());
+    assert_eq!(asset.sha256, None, "offered, but install refuses it");
     assert!(
         parse_release_for(&answer("v0.5.0"), Platform::Other)
             .unwrap()
@@ -83,7 +84,12 @@ fn files_from_elsewhere_drafts_and_odd_tags_are_never_offered() {
     let mut pre = answer("v0.5.0");
     pre["prerelease"] = json!(true);
     assert!(parse_release_for(&pre, Platform::Windows).is_none());
-    assert!(parse_release_for(&answer("v0.5.0-rc.1"), Platform::Windows).is_none());
+    for odd in ["v0.5.0-rc.1", "0.5.0", " v0.5.0", "v0.05.0", "v0.5.0 "] {
+        assert!(
+            parse_release_for(&answer(odd), Platform::Windows).is_none(),
+            "{odd:?}"
+        );
+    }
 }
 
 #[test]
@@ -152,14 +158,8 @@ fn headers_come_from_the_last_response_after_redirects() {
 }
 
 #[test]
-fn checksum_lists_and_downloads_are_checked_exactly() {
+fn downloads_are_checked_exactly() {
     let a = "a".repeat(64);
-    let list = format!("{a}  Rigometry-0.5.0-macos-universal.zip\n");
-    assert_eq!(
-        sums_line(&list, "Rigometry-0.5.0-macos-universal.zip").as_deref(),
-        Some(a.as_str())
-    );
-    assert_eq!(sums_line(&list, "other.zip"), None);
     let folder = tempfile::tempdir().unwrap();
     let file = folder.path().join("x");
     std::fs::write(&file, b"abc").unwrap();
@@ -178,8 +178,14 @@ fn only_a_packaged_copy_replaces_itself() {
         Target::Program(exe.clone())
     );
     std::fs::write(folder.path().join("Cargo.toml"), "").unwrap();
-    assert!(matches!(
+    assert_eq!(
         target_of(&exe, Platform::Windows),
+        Target::Program(exe.clone()),
+        "a Cargo.toml nearby alone is not a build from the code"
+    );
+    let built = folder.path().join("target/release/Rigometry.exe");
+    assert!(matches!(
+        target_of(&built, Platform::Windows),
         Target::Fixed(_)
     ));
     let bundle = Path::new("/Applications/Rigometry.app");
@@ -203,19 +209,41 @@ fn only_a_packaged_copy_replaces_itself() {
 
 #[test]
 fn the_new_program_takes_the_old_ones_place_and_the_old_one_waits_aside() {
+    let package = |folder: &Path| {
+        let package = folder.join("unpacked/Rigometry");
+        std::fs::create_dir_all(package.join("docs/screenshots")).unwrap();
+        std::fs::write(package.join("Rigometry.exe"), b"new program").unwrap();
+        std::fs::write(package.join("docs/usage.md"), b"new guide").unwrap();
+        std::fs::write(package.join("docs/screenshots/new.png"), b"png").unwrap();
+        package
+    };
+    // A program copied on its own among other files: only it is replaced.
+    let folder = tempfile::tempdir().unwrap();
+    let tools = folder.path().join("Tools");
+    std::fs::create_dir_all(tools.join("docs")).unwrap();
+    let exe = tools.join("Rigometry.exe");
+    std::fs::write(&exe, b"old program").unwrap();
+    std::fs::write(tools.join("docs/usage.md"), b"another tool's guide").unwrap();
+    assert!(replace_program(&exe, &package(folder.path())).is_ok());
+    assert_eq!(std::fs::read(&exe).unwrap(), b"new program");
+    assert_eq!(
+        std::fs::read(tools.join("docs/usage.md")).unwrap(),
+        b"another tool's guide"
+    );
+    // The unpacked package: its documentation follows the program.
     let folder = tempfile::tempdir().unwrap();
     let app = folder.path().join("Rigometry");
     std::fs::create_dir_all(app.join("docs")).unwrap();
     let exe = app.join("Rigometry.exe");
     std::fs::write(&exe, b"old program").unwrap();
+    std::fs::write(
+        app.join("SHA256SUMS.txt"),
+        format!("{}  Rigometry.exe\r\n", "a".repeat(64)),
+    )
+    .unwrap();
     std::fs::write(app.join("docs/usage.md"), b"old guide").unwrap();
     std::fs::write(app.join("notes.txt"), b"the user's own file").unwrap();
-    let package = folder.path().join("unpacked/Rigometry");
-    std::fs::create_dir_all(package.join("docs/screenshots")).unwrap();
-    std::fs::write(package.join("Rigometry.exe"), b"new program").unwrap();
-    std::fs::write(package.join("docs/usage.md"), b"new guide").unwrap();
-    std::fs::write(package.join("docs/screenshots/new.png"), b"png").unwrap();
-    replace_program(&exe, &package).unwrap();
+    assert!(replace_program(&exe, &package(folder.path())).is_ok());
     assert_eq!(std::fs::read(&exe).unwrap(), b"new program");
     assert_eq!(std::fs::read(old_program(&exe)).unwrap(), b"old program");
     assert_eq!(
@@ -238,7 +266,10 @@ fn a_bundle_is_swapped_and_restored_if_the_new_one_is_missing() {
     let staging = folder.path().join(".rigometry-update-x");
     std::fs::create_dir(&staging).unwrap();
     let missing = staging.join("unpacked/Rigometry.app");
-    assert!(replace_bundle(&bundle, &missing, &staging).is_err());
+    assert!(matches!(
+        replace_bundle(&bundle, &missing, &staging),
+        Err(Swap::Kept(_))
+    ));
     assert_eq!(
         std::fs::read(bundle.join("Contents/Info.plist")).unwrap(),
         b"old",
@@ -247,12 +278,40 @@ fn a_bundle_is_swapped_and_restored_if_the_new_one_is_missing() {
     let new = staging.join("new/Rigometry.app");
     std::fs::create_dir_all(new.join("Contents")).unwrap();
     std::fs::write(new.join("Contents/Info.plist"), b"new").unwrap();
-    replace_bundle(&bundle, &new, &staging).unwrap();
+    assert!(replace_bundle(&bundle, &new, &staging).is_ok());
     assert_eq!(
         std::fs::read(bundle.join("Contents/Info.plist")).unwrap(),
         b"new"
     );
     assert!(staging.join("previous.app").is_dir());
+}
+
+/// The new program must name the release's version, and a hanging one is
+/// stopped rather than waited for.
+#[cfg(unix)]
+#[test]
+fn the_new_program_must_answer_with_its_version() {
+    use std::os::unix::fs::PermissionsExt;
+    let folder = tempfile::tempdir().unwrap();
+    let program = |name: &str, script: &str| {
+        let path = folder.path().join(name);
+        std::fs::write(&path, format!("#!/bin/sh\n{script}\n")).unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        path
+    };
+    let idle = AtomicBool::new(false);
+    let right = program("right", "echo 'Rigometry 0.5.0'");
+    assert!(confirm(&right, "0.5.0", &idle).is_ok());
+    assert!(confirm(&right, "0.6.0", &idle).is_err());
+    let failing = program("failing", "echo 'Rigometry 0.5.0'; exit 1");
+    assert!(confirm(&failing, "0.5.0", &idle).is_err());
+    let hanging = program("hanging", "exec sleep 60");
+    let started = Instant::now();
+    assert_eq!(
+        confirm(&hanging, "0.5.0", &AtomicBool::new(true)),
+        Err("Update cancelled".into())
+    );
+    assert!(started.elapsed() < Duration::from_secs(10));
 }
 
 #[test]
@@ -316,7 +375,7 @@ fn a_published_release_downloads_verifies_and_unpacks() {
     verify(&archive, asset.size, &sha256).unwrap();
     let unpacked = folder.path().join("unpacked");
     std::fs::create_dir(&unpacked).unwrap();
-    unpack(&archive, &unpacked).unwrap();
+    unpack(folder.path()).unwrap();
     let bundle = find_bundle(&unpacked).expect("Rigometry.app in the download");
     assert!(bundle.join("Contents/MacOS/rigometry").is_file());
 }

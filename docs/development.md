@@ -59,7 +59,7 @@ pwsh -File .\scripts\verify-windows.ps1 -SkipBuild -SkipTests -TimeoutSeconds 90
 
 ## Updates
 
-`RIGOMETRY_PRETEND_VERSION=0.1.0` makes a build count as an older version, so it is offered the latest release; `RIGOMETRY_NO_UPDATE_CHECK=1` and the `CI` variable stop automatic checks. A copy started from `target/` (a `Cargo.toml` above it) never replaces itself: package it first. `cargo test -- --ignored a_published_release_downloads_verifies_and_unpacks` downloads the latest published Mac release with the system's `curl`, checks GitHub's digest and unpacks it.
+`RIGOMETRY_PRETEND_VERSION=0.1.0` makes a build count as an older version, so it is offered the latest release; `RIGOMETRY_NO_UPDATE_CHECK=1` and the `CI` variable stop automatic checks. A copy started from Cargo's `target` folder never replaces itself: package it first. `cargo test -- --ignored a_published_release_downloads_verifies_and_unpacks` downloads the latest published Mac release with the system's `curl`, checks GitHub's digest and unpacks it.
 
 ## Visual checks
 

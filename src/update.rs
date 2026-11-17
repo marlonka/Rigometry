@@ -34,6 +34,8 @@ const STALE_MS: u64 = 6 * 60 * 60 * 1000;
 const ASKED_FLOOR_MS: u64 = 60 * 1000;
 /// The first look waits this long after the start, so it never delays it.
 pub const FIRST_LOOK: Duration = Duration::from_secs(5);
+/// After a failed look by itself, for example offline, the next one waits this long.
+pub const RETRY: Duration = Duration::from_secs(30 * 60);
 /// GitHub's answer for a release is a few kilobytes.
 const ANSWER_CAP: u64 = 1024 * 1024;
 /// A release ZIP is about 8 MB; anything far larger is not ours.
@@ -115,10 +117,8 @@ pub struct Asset {
     pub name: String,
     pub url: String,
     pub size: u64,
-    /// Lower-case hex from GitHub's `digest`.
+    /// Lower-case hex from GitHub's `digest`; a download without one is not installed.
     pub sha256: Option<String>,
-    /// The `.sha256` file published beside it, for a file GitHub keeps no digest of.
-    pub sums_url: Option<String>,
 }
 
 /// The systems releases are built for.
@@ -142,10 +142,16 @@ impl Platform {
     /// Windows archive carries a build time after the platform.
     fn asset(self, name: &str, version: &str) -> bool {
         match self {
-            Self::Windows => {
-                name.starts_with(&format!("Rigometry-{version}-windows-x64"))
-                    && name.ends_with(".zip")
-            }
+            // `Rigometry-0.5.0-windows-x64-20261117T073000123Z.zip`
+            Self::Windows => name
+                .strip_prefix(&format!("Rigometry-{version}-windows-x64-"))
+                .and_then(|rest| rest.strip_suffix("Z.zip"))
+                .and_then(|stamp| stamp.split_once('T'))
+                .is_some_and(|(day, time)| {
+                    day.len() == 8
+                        && !time.is_empty()
+                        && day.bytes().chain(time.bytes()).all(|b| b.is_ascii_digit())
+                }),
             Self::MacOs => name == format!("Rigometry-{version}-macos-universal.zip"),
             Self::Other => false,
         }
@@ -168,26 +174,25 @@ fn parse_release_for(answer: &Value, platform: Platform) -> Option<Release> {
         return None;
     }
     let tag = answer["tag_name"].as_str()?;
+    // Exactly `v` and the number: the tag becomes part of addresses.
     let version = Version::parse(tag)?.to_string();
+    if tag != format!("v{version}") {
+        return None;
+    }
     let prefix = format!("https://github.com/{REPO}/releases/download/{tag}/");
-    let assets: Vec<(&str, &str, &Value)> = answer["assets"]
+    let asset = answer["assets"]
         .as_array()
         .into_iter()
         .flatten()
-        .filter_map(|asset| {
+        .find_map(|asset| {
             let name = asset["name"].as_str()?;
             let url = asset["browser_download_url"].as_str()?;
-            let plain = !name.is_empty()
-                && name
-                    .bytes()
-                    .all(|b| b.is_ascii_alphanumeric() || b"-_.".contains(&b));
-            (plain && url == format!("{prefix}{name}")).then_some((name, url, asset))
-        })
-        .collect();
-    let asset = assets
-        .iter()
-        .find(|(name, _, _)| platform.asset(name, &version))
-        .and_then(|&(name, url, asset)| {
+            let plain = name
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b"-_.".contains(&b));
+            if !plain || !platform.asset(name, &version) || url != format!("{prefix}{name}") {
+                return None;
+            }
             Some(Asset {
                 name: name.into(),
                 url: url.into(),
@@ -197,10 +202,6 @@ fn parse_release_for(answer: &Value, platform: Platform) -> Option<Release> {
                     .and_then(|digest| digest.strip_prefix("sha256:"))
                     .filter(|hex| is_sha256(hex))
                     .map(str::to_ascii_lowercase),
-                sums_url: assets
-                    .iter()
-                    .find(|(sums, _, _)| *sums == format!("{name}.sha256"))
-                    .map(|(_, url, _)| (*url).to_owned()),
             })
         });
     Some(Release {
@@ -285,11 +286,10 @@ pub struct Record {
 impl Record {
     /// A look by itself is due: the last one is old and GitHub does not ask to wait.
     pub fn due(&self, now: u64) -> bool {
-        let limited = self.retry_after.is_some_and(|until| until > now);
         let stale = self
             .checked_at
             .is_none_or(|at| now.saturating_sub(at) >= STALE_MS);
-        stale && !limited
+        stale && !self.limited(now)
     }
 
     /// The release to offer a copy running `running`: a newer one with this computer's download.
@@ -316,6 +316,11 @@ impl Record {
             }
             Checked::Limited(until) => self.retry_after = Some(*until),
         }
+    }
+
+    /// GitHub asks to wait until later than `now`.
+    pub fn limited(&self, now: u64) -> bool {
+        self.retry_after.is_some_and(|until| until > now)
     }
 
     /// Someone asking within a minute of the last look gets that look.
@@ -387,7 +392,11 @@ fn quiet(program: &Path) -> Command {
 /// lead from GitHub's download address to its file storage.
 fn curl_command() -> Command {
     let mut command = quiet(&curl());
+    // `--disable` must come first: no .curlrc of the user's may change how
+    // releases are fetched, for example by turning off certificate checks.
     command
+        .env_remove("CURL_HOME")
+        .arg("--disable")
         .args([
             "--silent",
             "--show-error",
@@ -561,15 +570,16 @@ pub fn target() -> Target {
     }
 }
 
-/// A build from the code has the repository's `Cargo.toml` a few folders up; a
-/// Mac app started from Downloads runs from a read-only translocated copy.
+/// A build from the code lives in Cargo's `target` folder beside a
+/// `Cargo.toml`; a Mac app started from Downloads runs from a read-only
+/// translocated copy.
 fn target_of(exe: &Path, platform: Platform) -> Target {
-    if exe
-        .ancestors()
-        .skip(1)
-        .take(5)
-        .any(|folder| folder.join("Cargo.toml").is_file())
-    {
+    if exe.ancestors().skip(1).take(4).any(|folder| {
+        folder.file_name().is_some_and(|name| name == "target")
+            && folder
+                .parent()
+                .is_some_and(|code| code.join("Cargo.toml").is_file())
+    }) {
         return Target::Fixed("This copy was built from the source code");
     }
     if platform == Platform::MacOs {
@@ -602,10 +612,15 @@ impl Target {
     }
 }
 
-/// Downloads, checks and puts in place `release` for `target`. `received` counts
-/// the downloaded bytes. Returns the program to start, which is the old path.
+/// Downloads, checks and puts in place release `version` for `target`.
+/// `received` counts the downloaded bytes. Returns the program to start, which
+/// is the old path.
+///
+/// The release is asked of GitHub again first: what was saved with the
+/// settings is never trusted, and a release whose files were replaced since
+/// the last look is checked against its current digest.
 pub fn install(
-    release: &Release,
+    version: &str,
     target: &Target,
     received: &AtomicU64,
     cancel: &AtomicBool,
@@ -616,6 +631,14 @@ pub fn install(
             _ => "No folder for the update".into(),
         });
     };
+    let release = match check(None)? {
+        Checked::Latest {
+            release: Some(release),
+            ..
+        } if release.version == version => release,
+        Checked::Limited(_) => return Err("GitHub asks to wait; try again later".into()),
+        _ => return Err("The release changed since the last look; check again".into()),
+    };
     let asset = release
         .asset
         .as_ref()
@@ -623,88 +646,97 @@ pub fn install(
     if asset.size == 0 || asset.size > MOST_BYTES {
         return Err("The release's download has an unexpected size".into());
     }
+    let sha256 = asset
+        .sha256
+        .as_ref()
+        .ok_or("The release has no checksum for its download, so it is not installed")?;
     // Same folder, same volume: the new files take the old ones' place by renaming.
     let staging = tempfile::Builder::new()
         .prefix(STAGING)
         .tempdir_in(folder)
         .map_err(|error| format!("Rigometry cannot write beside itself: {error}"))?;
-    let archive = staging.path().join("download.zip");
+    // Tools are given names relative to the staging folder: Windows' tar and
+    // curl read arguments in the ANSI code page, which a user's folder may exceed.
     let mut command = curl_command();
     command
+        .current_dir(staging.path())
         .args(["--fail", "--max-time", "1800", "--max-filesize"])
         .arg(asset.size.to_string())
-        .arg("--output")
-        .arg(&archive)
+        .args(["--output", "download.zip"])
         .arg(&asset.url);
+    let archive = staging.path().join("download.zip");
     run_curl(
         command,
         Duration::from_secs(1830),
         Some((&archive, received)),
         cancel,
     )?;
-    let sha256 = match &asset.sha256 {
-        Some(sha256) => sha256.clone(),
-        None => sidecar_sha256(asset, staging.path(), cancel)?,
-    };
-    verify(&archive, asset.size, &sha256)?;
+    verify(&archive, asset.size, sha256)?;
+    std::fs::create_dir(staging.path().join("unpacked")).map_err(|error| error.to_string())?;
+    unpack(staging.path())?;
     let unpacked = staging.path().join("unpacked");
-    std::fs::create_dir(&unpacked).map_err(|error| error.to_string())?;
-    unpack(&archive, &unpacked)?;
-    let started = match target {
-        Target::Program(exe) => {
+    let (new, program) = match target {
+        Target::Program(_) => {
             let package = unpacked.join("Rigometry");
-            let new = package.join("Rigometry.exe");
-            confirm(&new, &release.version)?;
-            replace_program(exe, &package)?;
-            exe.clone()
+            let program = package.join("Rigometry.exe");
+            (package, program)
         }
-        Target::Bundle(bundle) => {
-            let new = find_bundle(&unpacked).ok_or("The download holds no Rigometry.app")?;
-            confirm(&new.join("Contents/MacOS/rigometry"), &release.version)?;
-            codesign(&new)?;
-            replace_bundle(bundle, &new, staging.path())?;
-            bundle.join("Contents/MacOS/rigometry")
+        Target::Bundle(_) => {
+            let bundle = find_bundle(&unpacked).ok_or("The download holds no Rigometry.app")?;
+            let program = bundle.join("Contents/MacOS/rigometry");
+            (bundle, program)
         }
         Target::Fixed(reason) => return Err((*reason).into()),
     };
-    // The old program or bundle stays in the staging folder until the new
-    // version, once started, tidies it away.
-    let _ = staging.keep();
-    Ok(started)
+    confirm(&program, &release.version, cancel)?;
+    if matches!(target, Target::Bundle(_)) {
+        codesign(&new)?;
+    }
+    // The last moment the update can still be called off.
+    if cancel.load(Ordering::Relaxed) {
+        return Err("Update cancelled".into());
+    }
+    let swapped = match target {
+        Target::Program(exe) => replace_program(exe, &new).map(|()| exe.clone()),
+        Target::Bundle(bundle) => replace_bundle(bundle, &new, staging.path())
+            .map(|()| bundle.join("Contents/MacOS/rigometry")),
+        Target::Fixed(reason) => Err(Swap::Kept((*reason).into())),
+    };
+    match swapped {
+        // The old program or bundle stays in the staging folder until the new
+        // version, once started, tidies it away.
+        Ok(started) => {
+            let _ = staging.keep();
+            Ok(started)
+        }
+        Err(Swap::Kept(error)) => Err(error),
+        // Neither copy is in place: keep everything, and say where the old one is.
+        Err(Swap::Lost(previous)) => {
+            let _ = staging.keep();
+            Err(format!(
+                "Rigometry could not put its previous version back; it is kept at {}",
+                previous.display()
+            ))
+        }
+    }
 }
 
-/// The checksum from the `.sha256` file beside the download.
-fn sidecar_sha256(asset: &Asset, folder: &Path, cancel: &AtomicBool) -> Result<String, String> {
-    let url = asset
-        .sums_url
-        .as_ref()
-        .ok_or("The release has no checksum for its download, so it is not installed")?;
-    let file = folder.join("download.sha256");
-    let mut command = curl_command();
-    command
-        .args([
-            "--fail",
-            "--max-time",
-            "60",
-            "--max-filesize",
-            "4096",
-            "--output",
-        ])
-        .arg(&file)
-        .arg(url);
-    run_curl(command, Duration::from_secs(70), None, cancel)?;
-    let text = std::fs::read_to_string(&file).map_err(|error| error.to_string())?;
-    sums_line(&text, &asset.name)
-        .ok_or_else(|| "The release's checksum file does not name its download".into())
+/// Why replacing the app failed, and whether the old one is back in place.
+enum Swap {
+    /// The old app is in place again.
+    Kept(String),
+    /// The old app could not be put back from here, and must not be deleted.
+    Lost(PathBuf),
 }
 
-/// The checksum for `name` in a `sha256sum`-style list.
-fn sums_line(text: &str, name: &str) -> Option<String> {
-    text.lines().find_map(|line| {
-        let (hash, file) = line.trim().split_once(char::is_whitespace)?;
-        let file = file.trim_start().trim_start_matches('*');
-        (file == name && is_sha256(hash)).then(|| hash.to_ascii_lowercase())
-    })
+/// What a failed rename means for the user, in words they can act on.
+fn swap_error(error: &std::io::Error) -> String {
+    // macOS App Management refuses changes to an app it has checked.
+    if cfg!(target_os = "macos") && error.raw_os_error() == Some(1) {
+        "macOS did not allow Rigometry to replace itself: allow it under System Settings → Privacy & Security → App Management, or download the update from the release page".into()
+    } else {
+        format!("Rigometry cannot replace itself: {error}")
+    }
 }
 
 /// The file has exactly the size and SHA-256 the release names.
@@ -736,23 +768,25 @@ fn verify(file: &Path, size: u64, sha256: &str) -> Result<(), String> {
     }
 }
 
-/// Unpacks the ZIP with the system's own tool: `tar` on Windows, `ditto` on a
-/// Mac, which keeps an app bundle's signature and attributes intact.
-fn unpack(archive: &Path, into: &Path) -> Result<(), String> {
+/// Unpacks `download.zip` into `unpacked`, both in `staging`, with the system's
+/// own tool: `tar` on Windows, `ditto` on a Mac, which keeps an app bundle's
+/// signature and attributes intact.
+fn unpack(staging: &Path) -> Result<(), String> {
     let mut command = if cfg!(target_os = "macos") {
         let mut command = quiet(Path::new("/usr/bin/ditto"));
-        command.args(["-x", "-k"]).arg(archive).arg(into);
+        command.args(["-x", "-k", "download.zip", "unpacked"]);
         command
     } else if cfg!(windows) {
         let mut command = quiet(&system_tool("tar"));
-        command.arg("-xf").arg(archive).arg("-C").arg(into);
+        command.args(["-xf", "download.zip", "-C", "unpacked"]);
         command
     } else {
         let mut command = quiet(Path::new("/usr/bin/unzip"));
-        command.arg("-q").arg(archive).arg("-d").arg(into);
+        command.args(["-q", "download.zip", "-d", "unpacked"]);
         command
     };
     let output = command
+        .current_dir(staging)
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
         .output()
@@ -767,16 +801,43 @@ fn unpack(archive: &Path, into: &Path) -> Result<(), String> {
     }
 }
 
-/// The new program runs and is the version the release names.
-fn confirm(program: &Path, version: &str) -> Result<(), String> {
-    let output = quiet(program)
+/// The new program runs and is the version the release names, within 30
+/// seconds; a program that hangs is stopped, not waited for.
+fn confirm(program: &Path, version: &str, cancel: &AtomicBool) -> Result<(), String> {
+    let mut child = quiet(program)
         .arg("--version")
         .env_remove(PRETEND)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
         .stderr(Stdio::null())
-        .output()
+        .spawn()
         .map_err(|error| format!("The new version does not start: {error}"))?;
-    let said = String::from_utf8_lossy(&output.stdout);
-    if output.status.success() && said.trim() == format!("Rigometry {version}") {
+    let mut stdout = child.stdout.take().expect("piped stdout");
+    let said = std::thread::spawn(move || {
+        let mut text = String::new();
+        let _ = stdout.read_to_string(&mut text);
+        text
+    });
+    let started = Instant::now();
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) if cancel.load(Ordering::Relaxed) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err("Update cancelled".into());
+            }
+            Ok(None) if started.elapsed() > Duration::from_secs(30) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err("The new version did not answer in time".into());
+            }
+            Ok(None) => std::thread::sleep(Duration::from_millis(50)),
+            Err(error) => return Err(format!("The new version does not start: {error}")),
+        }
+    };
+    let said = said.join().unwrap_or_default();
+    if status.success() && said.trim() == format!("Rigometry {version}") {
         Ok(())
     } else {
         Err(format!(
@@ -814,17 +875,28 @@ fn find_bundle(unpacked: &Path) -> Option<PathBuf> {
 }
 
 /// Puts the new package's files beside `exe`. The running program is renamed
-/// first, which Windows allows; every other file is replaced in place. If the
-/// new program cannot take the old one's place, the old one is restored.
-fn replace_program(exe: &Path, package: &Path) -> Result<(), String> {
-    let folder = exe.parent().ok_or("No folder for the program")?;
+/// first, which Windows allows; if the new program cannot take its place, the
+/// old one is restored. The package's other files are replaced only in a folder
+/// that is a Rigometry package, never beside a program copied somewhere else.
+fn replace_program(exe: &Path, package: &Path) -> Result<(), Swap> {
+    let folder = exe
+        .parent()
+        .ok_or_else(|| Swap::Kept("No folder for the program".into()))?;
     let old = old_program(exe);
     let _ = std::fs::remove_file(&old);
-    std::fs::rename(exe, &old)
-        .map_err(|error| format!("Rigometry cannot replace itself: {error}"))?;
+    std::fs::rename(exe, &old).map_err(|error| Swap::Kept(swap_error(&error)))?;
     if let Err(error) = std::fs::rename(package.join("Rigometry.exe"), exe) {
-        let _ = std::fs::rename(&old, exe);
-        return Err(format!("Rigometry cannot replace itself: {error}"));
+        return Err(match std::fs::rename(&old, exe) {
+            Ok(()) => Swap::Kept(swap_error(&error)),
+            Err(_) => Swap::Lost(old),
+        });
+    }
+    let packaged = std::fs::read_to_string(folder.join("SHA256SUMS.txt")).is_ok_and(|sums| {
+        sums.lines()
+            .any(|line| line.trim_end().ends_with(" Rigometry.exe"))
+    });
+    if !packaged {
+        return Ok(());
     }
     // Documentation and notices follow; a file that cannot be replaced keeps
     // its old version and changes nothing about the program.
@@ -855,13 +927,14 @@ fn old_program(exe: &Path) -> PathBuf {
 
 /// Moves the running bundle aside into `staging` and the new one into its place;
 /// restores the old one if that fails.
-fn replace_bundle(bundle: &Path, new: &Path, staging: &Path) -> Result<(), String> {
+fn replace_bundle(bundle: &Path, new: &Path, staging: &Path) -> Result<(), Swap> {
     let aside = staging.join("previous.app");
-    std::fs::rename(bundle, &aside)
-        .map_err(|error| format!("Rigometry cannot replace itself: {error}"))?;
+    std::fs::rename(bundle, &aside).map_err(|error| Swap::Kept(swap_error(&error)))?;
     if let Err(error) = std::fs::rename(new, bundle) {
-        let _ = std::fs::rename(&aside, bundle);
-        return Err(format!("Rigometry cannot replace itself: {error}"));
+        return Err(match std::fs::rename(&aside, bundle) {
+            Ok(()) => Swap::Kept(swap_error(&error)),
+            Err(_) => Swap::Lost(aside),
+        });
     }
     Ok(())
 }
@@ -892,6 +965,7 @@ pub fn after_update() -> Option<String> {
     if let Some(pid) = std::env::var(AFTER_PID)
         .ok()
         .and_then(|pid| pid.parse::<u32>().ok())
+        .filter(|&pid| pid != 0 && pid != std::process::id())
     {
         wait_for_exit(pid, Duration::from_secs(20));
     }
@@ -906,7 +980,7 @@ pub fn after_update() -> Option<String> {
 
 /// Removes what an earlier update left beside the program: the replaced
 /// program, and staging folders; right after an update all of them, otherwise
-/// those older than a few minutes, which no update in progress can still use.
+/// those older than two hours, longer than any download may take.
 pub fn tidy(updated: bool) {
     let target = target();
     if let Target::Program(exe) = &target {
@@ -920,7 +994,10 @@ pub fn tidy(updated: bool) {
         let old = entry
             .metadata()
             .and_then(|meta| meta.modified())
-            .is_ok_and(|at| at.elapsed().is_ok_and(|age| age > Duration::from_secs(120)));
+            .is_ok_and(|at| {
+                at.elapsed()
+                    .is_ok_and(|age| age > Duration::from_secs(2 * 60 * 60))
+            });
         if named && (updated || old) {
             let _ = std::fs::remove_dir_all(entry.path());
         }
@@ -968,12 +1045,13 @@ pub fn open_page(url: &str) -> Result<(), String> {
         return Err("Not a release page of Rigometry".into());
     }
     let mut command = if cfg!(windows) {
-        let windows = system_tool("cmd")
+        // System32's parent is the Windows folder, where Explorer lives.
+        let explorer = system_tool("cmd")
             .parent()
             .and_then(Path::parent)
-            .map(|folder| folder.join("explorer.exe"))
+            .map(|windows| windows.join("explorer.exe"))
             .unwrap_or_else(|| PathBuf::from(r"C:\Windows\explorer.exe"));
-        Command::new(windows)
+        Command::new(explorer)
     } else if cfg!(target_os = "macos") {
         Command::new("/usr/bin/open")
     } else {

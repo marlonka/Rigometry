@@ -1272,12 +1272,6 @@
     "La versión no tiene suma de comprobación para su descarga, así que no se instala"
   ],
   [
-    "The release's checksum file does not name its download",
-    "Die Prüfsummendatei des Release nennt seinen Download nicht",
-    "Le fichier de sommes de contrôle de la version ne mentionne pas son téléchargement",
-    "El archivo de sumas de la versión no incluye su descarga"
-  ],
-  [
     "The download is not the file the release names, so it is not installed",
     "Der Download ist nicht die Datei, die das Release nennt, und wird daher nicht installiert",
     "Le téléchargement n’est pas le fichier indiqué par la version ; il n’est donc pas installé",
@@ -1348,5 +1342,41 @@
     "Kein Ordner für das Programm",
     "Aucun dossier pour le programme",
     "No hay carpeta para el programa"
+  ],
+  [
+    "GitHub asks to wait; try again later",
+    "GitHub bittet um eine Pause; später erneut versuchen",
+    "GitHub demande d’attendre ; réessayez plus tard",
+    "GitHub pide esperar; inténtalo más tarde"
+  ],
+  [
+    "The release changed since the last look; check again",
+    "Das Release hat sich seit der letzten Prüfung geändert; bitte erneut prüfen",
+    "La version a changé depuis la dernière vérification ; vérifiez à nouveau",
+    "La versión cambió desde la última comprobación; vuelve a comprobar"
+  ],
+  [
+    "The new version did not answer in time",
+    "Die neue Version hat nicht rechtzeitig geantwortet",
+    "La nouvelle version n’a pas répondu à temps",
+    "La nueva versión no respondió a tiempo"
+  ],
+  [
+    "macOS did not allow Rigometry to replace itself: allow it under System Settings → Privacy & Security → App Management, or download the update from the release page",
+    "macOS hat Rigometry nicht erlaubt, sich selbst zu ersetzen: unter Systemeinstellungen → Datenschutz & Sicherheit → App-Verwaltung erlauben oder das Update von der Release-Seite laden",
+    "macOS n’a pas autorisé Rigometry à se remplacer : autorisez-le dans Réglages Système → Confidentialité et sécurité → Gestion des apps, ou téléchargez la mise à jour depuis la page de la version",
+    "macOS no permitió que Rigometry se sustituyera: permítelo en Ajustes del Sistema → Privacidad y seguridad → Gestión de apps, o descarga la actualización desde la página de la versión"
+  ],
+  [
+    "Rigometry could not put its previous version back; it is kept at {0}",
+    "Rigometry konnte seine vorherige Version nicht zurücklegen; sie liegt unter {0}",
+    "Rigometry n’a pas pu remettre sa version précédente en place ; elle est conservée dans {0}",
+    "Rigometry no pudo restaurar su versión anterior; se conserva en {0}"
+  ],
+  [
+    "The check stopped before completion",
+    "Die Prüfung wurde vor dem Abschluss beendet",
+    "La vérification s’est arrêtée avant la fin",
+    "La comprobación se detuvo antes de terminar"
   ]
 ]

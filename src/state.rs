@@ -119,6 +119,8 @@ pub struct State {
     /// Repaints the UI when a background scan or search queues results.
     wake: storage::Wake,
 }
+const LIMITED: &str = "GitHub asks to wait; try again later";
+
 /// Whether a newer version is out, and its installation.
 pub struct Updates {
     pub record: update::Record,
@@ -127,10 +129,14 @@ pub struct Updates {
     /// A look in progress, and whether someone asked for it.
     checking: Option<(Receiver<Result<update::Checked, String>>, bool)>,
     pub installing: Option<Installing>,
-    /// Installed: start this program and close.
+    /// Installed: this program is the new version, to start in this copy's place.
     pub ready: Option<PathBuf>,
+    /// Start the new version and close, once the app gets to it.
+    pub restart: bool,
     pub error: Option<String>,
     started: Instant,
+    /// The last look by itself failed, for example offline; the next one waits.
+    failed_at: Option<Instant>,
 }
 
 pub struct Installing {
@@ -142,15 +148,22 @@ pub struct Installing {
 }
 
 impl Updates {
-    pub fn new(record: update::Record) -> Self {
+    /// `elevated`: this copy runs with administrator rights, and its update would too.
+    pub fn new(record: update::Record, elevated: bool) -> Self {
         Self {
             record,
-            target: update::target(),
+            target: if elevated {
+                update::Target::Fixed("Restart Rigometry without administrator rights to update it")
+            } else {
+                update::target()
+            },
             checking: None,
             installing: None,
             ready: None,
+            restart: false,
             error: None,
             started: Instant::now(),
+            failed_at: None,
         }
     }
 
@@ -690,24 +703,41 @@ impl State {
         };
         let now = now_ms();
         if let Some((receiver, asked)) = &updates.checking {
-            match receiver.try_recv() {
-                Ok(Ok(checked)) => {
-                    updates.record.apply(&checked, now);
-                    updates.checking = None;
+            let asked = *asked;
+            let result = match receiver.try_recv() {
+                Ok(result) => Some(result),
+                Err(TryRecvError::Empty) => None,
+                Err(TryRecvError::Disconnected) => {
+                    Some(Err("The check stopped before completion".into()))
                 }
-                Ok(Err(error)) => {
-                    if *asked {
-                        updates.error = Some(error);
+            };
+            if let Some(result) = result {
+                updates.checking = None;
+                match result {
+                    Ok(checked) => {
+                        updates.failed_at = None;
+                        if asked && matches!(checked, update::Checked::Limited(_)) {
+                            updates.error = Some(LIMITED.into());
+                        }
+                        updates.record.apply(&checked, now);
                     }
-                    updates.checking = None;
+                    // Only someone who asked hears of a failed look.
+                    Err(error) => {
+                        updates.failed_at = Some(Instant::now());
+                        if asked {
+                            updates.error = Some(error);
+                        }
+                    }
                 }
-                Err(TryRecvError::Empty) => {}
-                Err(TryRecvError::Disconnected) => updates.checking = None,
             }
         }
         if let Some(installing) = &updates.installing {
             match installing.receiver.try_recv() {
-                Ok(Ok(program)) => updates.ready = Some(program),
+                Ok(Ok(program)) => {
+                    updates.ready = Some(program);
+                    updates.restart = true;
+                    updates.installing = None;
+                }
                 Ok(Err(error)) => {
                     updates.error = Some(error);
                     updates.installing = None;
@@ -722,7 +752,11 @@ impl State {
         if automatic
             && updates.checking.is_none()
             && updates.installing.is_none()
+            && updates.ready.is_none()
             && updates.started.elapsed() >= update::FIRST_LOOK
+            && updates
+                .failed_at
+                .is_none_or(|at| at.elapsed() >= update::RETRY)
             && updates.record.due(now)
         {
             self.check_updates(false);
@@ -739,7 +773,13 @@ impl State {
         if updates.checking.is_some() || (asked && updates.record.fresh(now_ms())) {
             return;
         }
-        updates.error = None;
+        if asked {
+            updates.error = None;
+            if updates.record.limited(now_ms()) {
+                updates.error = Some(LIMITED.into());
+                return;
+            }
+        }
         // Without a known release, a 304 would leave nothing to show.
         let etag = updates
             .record
@@ -755,7 +795,12 @@ impl State {
             });
         match spawned {
             Ok(_) => updates.checking = Some((receiver, asked)),
-            Err(error) => updates.error = Some(format!("Could not start background task: {error}")),
+            Err(error) => {
+                updates.failed_at = Some(Instant::now());
+                if asked {
+                    updates.error = Some(format!("Could not start background task: {error}"));
+                }
+            }
         }
     }
 
@@ -766,7 +811,7 @@ impl State {
             Some(reason)
         } else if self.scan.is_some() || self.duplicates_running() || self.task.is_some() {
             Some("Finish or cancel the running scan, search or export first")
-        } else if updates.installing.is_some() {
+        } else if updates.installing.is_some() || updates.ready.is_some() {
             Some("The update is already being installed")
         } else {
             None
@@ -783,20 +828,22 @@ impl State {
         let Some(updates) = &mut self.updates else {
             return;
         };
-        let Some(release) = updates.offered().cloned() else {
+        let Some(release) = updates.offered() else {
             return;
         };
+        let version = release.version.clone();
+        let total = release.asset.as_ref().map_or(0, |asset| asset.size);
         let target = updates.target.clone();
         let received = Arc::new(AtomicU64::new(0));
         let cancel = Arc::new(AtomicBool::new(false));
         let (sender, receiver) = bounded(1);
         let (thread_received, thread_cancel) = (received.clone(), cancel.clone());
-        let version = release.version.clone();
-        let total = release.asset.as_ref().map_or(0, |asset| asset.size);
+        let thread_version = version.clone();
         let spawned = std::thread::Builder::new()
             .name("update-install".into())
             .spawn(move || {
-                let result = update::install(&release, &target, &thread_received, &thread_cancel);
+                let result =
+                    update::install(&thread_version, &target, &thread_received, &thread_cancel);
                 let _ = sender.send(result);
                 wake();
             });
