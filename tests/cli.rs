@@ -1,6 +1,7 @@
 //! Process-level contracts: argument validation, format routing and safe outputs.
 use std::{
     fs,
+    io::Read,
     process::{Command, Output, Stdio},
     thread,
     time::{Duration, Instant},
@@ -13,16 +14,32 @@ fn run(args: &[&std::ffi::OsStr]) -> Output {
         .stderr(Stdio::piped())
         .spawn()
         .expect("start the actual application");
+    // Drain both pipes while waiting: a full pipe must not stall the process.
+    let drain = |mut pipe: Box<dyn Read + Send>| {
+        thread::spawn(move || {
+            let mut bytes = Vec::new();
+            pipe.read_to_end(&mut bytes).map(|_| bytes)
+        })
+    };
+    let stdout = drain(Box::new(child.stdout.take().unwrap()));
+    let stderr = drain(Box::new(child.stderr.take().unwrap()));
     let deadline = Instant::now() + Duration::from_secs(30);
-    while child.try_wait().unwrap().is_none() {
+    let status = loop {
+        if let Some(status) = child.try_wait().unwrap() {
+            break status;
+        }
         if Instant::now() >= deadline {
             let _ = child.kill();
             let _ = child.wait();
             panic!("CLI command exceeded 30 seconds");
         }
         thread::sleep(Duration::from_millis(10));
+    };
+    Output {
+        status,
+        stdout: stdout.join().unwrap().unwrap(),
+        stderr: stderr.join().unwrap().unwrap(),
     }
-    child.wait_with_output().unwrap()
 }
 
 #[test]

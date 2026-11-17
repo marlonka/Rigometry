@@ -84,7 +84,10 @@ impl App {
             settings.scale = finite_scale(value);
         }
         let mut fonts = FontDefinitions::default();
-        if let Ok(font) = std::fs::read("C:/Windows/Fonts/segoeui.ttf") {
+        let windows_fonts = std::env::var_os("SystemRoot")
+            .map(|root| PathBuf::from(root).join("Fonts"))
+            .unwrap_or_else(|| PathBuf::from("C:/Windows/Fonts"));
+        if let Ok(font) = std::fs::read(windows_fonts.join("segoeui.ttf")) {
             fonts
                 .font_data
                 .insert("Segoe UI".into(), FontData::from_owned(font).into());
@@ -94,26 +97,24 @@ impl App {
                 .unwrap()
                 .insert(0, "Segoe UI".into());
         }
-        // Use installed system glyphs for CJK file names without redistributing fonts.
+        // Use installed system glyphs for CJK file names without redistributing
+        // fonts. Each covers different scripts (Hangul is only in the Korean
+        // fonts), so every one found is added as a fallback.
         for candidate in [
-            "C:/Windows/Fonts/msgothic.ttc",
-            "C:/Windows/Fonts/msyh.ttc",
-            "C:/Windows/Fonts/malgun.ttf",
-            "/System/Library/Fonts/Hiragino Sans GB.ttc",
-            "/System/Library/Fonts/AppleSDGothicNeo.ttc",
+            windows_fonts.join("msgothic.ttc"),
+            windows_fonts.join("msyh.ttc"),
+            windows_fonts.join("malgun.ttf"),
+            PathBuf::from("/System/Library/Fonts/Hiragino Sans GB.ttc"),
+            PathBuf::from("/System/Library/Fonts/AppleSDGothicNeo.ttc"),
         ] {
-            if let Ok(font) = std::fs::read(candidate) {
+            if let Ok(font) = std::fs::read(&candidate) {
+                let name = candidate.to_string_lossy().into_owned();
                 fonts
                     .font_data
-                    .insert("System CJK".into(), FontData::from_owned(font).into());
+                    .insert(name.clone(), FontData::from_owned(font).into());
                 for family in [FontFamily::Proportional, FontFamily::Monospace] {
-                    fonts
-                        .families
-                        .get_mut(&family)
-                        .unwrap()
-                        .push("System CJK".into());
+                    fonts.families.get_mut(&family).unwrap().push(name.clone());
                 }
-                break;
             }
         }
         if let Some(value) =
@@ -127,6 +128,7 @@ impl App {
         let mut state = create_state(settings, cc.egui_ctx.clone());
         if let Some(path) = scan {
             state.settings.path = path;
+            state.settings.page = Page::Storage;
             state.start_scan();
         }
         if capture_dir.is_some() {
@@ -223,7 +225,7 @@ impl App {
         });
     }
     fn overview(&mut self, ui: &mut Ui) {
-        header(ui, "Overview", "Hardware and current activity");
+        header(ui, "Overview");
         let Some(inv) = self.state.inventory.clone() else {
             loading(ui, &self.state);
             return;
@@ -569,7 +571,7 @@ impl App {
     }
 
     fn cpu(&mut self, ui: &mut Ui) {
-        header(ui, "CPU & Memory", "");
+        header(ui, "CPU & Memory");
         let Some(inv) = self.state.inventory.clone() else {
             loading(ui, &self.state);
             return;
@@ -806,7 +808,7 @@ impl App {
                                 RichText::new(td(
                                     ui,
                                     format!(
-                                        "{} in use · {} available to Windows",
+                                        "{} in use · {} available to the system",
                                         ui_bytes(ui, used as u64),
                                         ui_bytes(ui, total as u64)
                                     ),
@@ -837,7 +839,7 @@ impl App {
                 let module_count = inv
                     .memory
                     .iter()
-                    .filter(|f| f.label.ends_with(" capacity") && f.label.starts_with("Module "))
+                    .filter(|f| f.label.ends_with(" capacity") && per_module(&f.label))
                     .count();
                 let module = |ui: &mut Ui, n: usize| {
                     panel(ui, |ui| {
@@ -882,9 +884,7 @@ impl App {
                     let fields: Vec<_> = inv
                         .memory
                         .iter()
-                        .filter(|f| {
-                            !f.label.starts_with("Module ") && f.label != "Installed capacity"
-                        })
+                        .filter(|f| !per_module(&f.label) && f.label != "Installed capacity")
                         .cloned()
                         .collect();
                     field_table(ui, "memory-extra", &fields);
@@ -898,7 +898,7 @@ impl App {
         }
     }
     fn gpu(&mut self, ui: &mut Ui) {
-        header(ui, "GPU", "");
+        header(ui, "GPU");
         let Some(inv) = self.state.inventory.clone() else {
             loading(ui, &self.state);
             return;
@@ -1078,7 +1078,7 @@ impl App {
     }
     fn storage(&mut self, ui: &mut Ui) {
         let compact = ui.available_width() < 520.;
-        header(ui, "Storage", "Read-only folder and drive analysis");
+        header(ui, "Storage");
         // Keep all scan actions together. Reserve their width even when idle,
         // so starting a scan never moves the path field or wraps Cancel alone.
         let actions_width = scan_actions_width(ui);
@@ -1476,7 +1476,7 @@ impl App {
             );
         });
         if let Some(summary) = &self.state.summary {
-            folding(ui, tx(ui, "Scan accounting & skipped entries")).id_salt("scan-notes").show(ui,|ui|{ui.label(td(ui, format!("{} errors · {} reparse points · {} cloud placeholders · {} hard-link aliases",summary.errors,summary.skipped_reparse,summary.skipped_cloud,summary.hard_links))); if summary.denied + summary.locked > 0 { ui.label(td(ui, format!("{} access denied · {} in use by Windows", summary.denied, summary.locked))); } for note in &summary.notes{ui.label(td(ui, note));} });
+            folding(ui, tx(ui, "Scan accounting & skipped entries")).id_salt("scan-notes").show(ui,|ui|{ui.label(td(ui, format!("{} errors · {} reparse points · {} cloud placeholders · {} hard-link aliases",summary.errors,summary.skipped_reparse,summary.skipped_cloud,summary.hard_links))); if summary.denied + summary.locked > 0 { ui.label(td(ui, format!("{} access denied · {} in use by other programs", summary.denied, summary.locked))); } for note in &summary.notes{ui.label(td(ui, note));} });
         }
     }
     fn storage_table(&mut self, ui: &mut Ui) -> Option<usize> {
@@ -2060,11 +2060,7 @@ impl App {
         clicked
     }
     fn diagnostics(&mut self, ui: &mut Ui) {
-        header(
-            ui,
-            "Diagnostics",
-            "Provider sources, availability and sampling timestamps",
-        );
+        header(ui, "Diagnostics");
         if ui.button(tx(ui, "Export hardware & samples…")).clicked() {
             self.state.export_hardware();
         }
@@ -2084,18 +2080,21 @@ impl App {
                 ("Motherboard", &inv.motherboard),
                 (crate::model::OS_NAME, &inv.os),
             ] {
-                folding(ui, tx(ui, name)).show(ui, |ui| {
+                folding(ui, tx(ui, name)).id_salt(name).show(ui, |ui| {
                     for f in fields {
                         diagnostic_field(ui, f);
                     }
                 });
             }
             for adapter in &inv.adapters {
-                folding(ui, &adapter.name).show(ui, |ui| {
-                    for f in &adapter.fields {
-                        diagnostic_field(ui, f);
-                    }
-                });
+                // Two identical GPUs share a name; their IDs differ.
+                folding(ui, &adapter.name)
+                    .id_salt(&adapter.id)
+                    .show(ui, |ui| {
+                        for f in &adapter.fields {
+                            diagnostic_field(ui, f);
+                        }
+                    });
             }
         }
         if let Some(sample) = self.state.history.back() {
@@ -2121,7 +2120,7 @@ impl App {
         }
     }
     fn settings(&mut self, ui: &mut Ui) {
-        header(ui, "Settings", "Appearance and keyboard controls");
+        header(ui, "Settings");
         section(ui, "Appearance", |ui| {
             ui.horizontal_wrapped(|ui| {
                 let label = ui.label(tx(ui, "Language"));
@@ -2511,6 +2510,9 @@ impl eframe::App for App {
 }
 
 fn apply_style(ctx: &Context, settings: &Settings) {
+    // Ctrl/⌘ + plus/minus would zoom past the scale setting and the minimum
+    // window size derived from it; the setting is the one zoom control.
+    ctx.options_mut(|options| options.zoom_with_keyboard = false);
     ctx.send_viewport_cmd(ViewportCommand::MinInnerSize(
         vec2(1080., 720.) / (BASE_SCALE * settings.scale),
     ));
@@ -2760,7 +2762,7 @@ fn field_display(ui: &Ui, field: &Field) -> String {
         value
     }
 }
-fn header(ui: &mut Ui, title: &str, _subtitle: &str) {
+fn header(ui: &mut Ui, title: &str) {
     ui.label(RichText::new(tx(ui, title)).size(27.));
     ui.add_space(22.);
 }
@@ -2797,6 +2799,14 @@ fn loading(ui: &mut Ui, state: &State) {
             .as_deref()
             .unwrap_or("Reading hardware…"),
     ));
+}
+/// Labels like "Module 2 capacity" belong to one memory module; "Module
+/// manufacturer" without a number describes them all.
+fn per_module(label: &str) -> bool {
+    label
+        .strip_prefix("Module ")
+        .and_then(|rest| rest.split_once(' '))
+        .is_some_and(|(number, _)| number.parse::<usize>().is_ok())
 }
 fn field_value(ui: &Ui, fields: &[Field], name: &str) -> String {
     fields
@@ -3632,6 +3642,15 @@ fn explorer_command(path: &std::path::Path) -> Result<std::process::Command, Str
         PathBuf::from(std::ffi::OsString::from_wide(&directory[..length])).join("explorer.exe");
     let mut argument = std::ffi::OsString::from("/select,\"");
     argument.push(path.as_os_str());
+    // A root such as `C:\` ends in a backslash, which would escape the
+    // closing quote; doubled, it stays a backslash.
+    let units: Vec<u16> = path.as_os_str().encode_wide().collect();
+    let trailing = units
+        .iter()
+        .rev()
+        .take_while(|&&unit| unit == u16::from(b'\\'))
+        .count();
+    argument.push("\\".repeat(trailing));
     argument.push("\"");
     let mut command = std::process::Command::new(executable);
     command.raw_arg(argument);
@@ -3652,10 +3671,12 @@ fn relaunch_elevated(_: &std::path::Path) -> Result<(), String> {
 /// Opens the file manager with `path` selected.
 #[cfg(not(windows))]
 fn reveal(path: &std::path::Path) -> Result<(), String> {
-    file_manager_command(path)?
+    let mut child = file_manager_command(path)?
         .spawn()
-        .map(|_| ())
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    // Collect the exit status, or every reveal would leave a zombie process.
+    std::thread::spawn(move || child.wait());
+    Ok(())
 }
 #[cfg(not(windows))]
 fn file_manager_command(path: &std::path::Path) -> Result<std::process::Command, String> {

@@ -217,10 +217,7 @@ fn add(
         if entry.id != [0; 16] && !worker.seen.insert(FileIdentity(volume, entry.id)) {
             worker.summary.hard_links += 1;
             node.allocated = 0;
-            append_note(
-                &mut node.note,
-                "Hard-link alias: allocated bytes attributed to another path in this scan",
-            );
+            append_note(&mut node.note, super::HARD_LINK_ALIAS);
         }
         if attributes & FILE_ATTRIBUTE_SPARSE_FILE.0 != 0 {
             append_note(&mut node.note, "Sparse");
@@ -279,6 +276,9 @@ fn list(path: &Path, layout: &AtomicUsize, halted: &dyn Fn() -> bool) -> Listing
         if let Err(error) = result {
             match win32_code(&error) {
                 Some(18) => {} // ERROR_NO_MORE_FILES
+                // A volume root has no `.` entries, so an empty one reports
+                // that no file matched instead of the end of the listing.
+                Some(2) if !started => {}
                 // Unsupported class: fall back for this and every later folder.
                 Some(1 | 50 | 87 | 124) if !started && index + 1 < LAYOUTS.len() => {
                     let _ = layout.compare_exchange(

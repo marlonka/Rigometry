@@ -554,11 +554,15 @@ fn mft_extents(disk: &impl Disk, g: Geometry) -> Result<Vec<Extent>, String> {
         let mut vcn = 0u64;
         decode_runs(runs.ok_or("MFT runs are malformed")?, |lcn, clusters| {
             let lcn = lcn?;
-            extents.push(Extent {
+            let extent = Extent {
                 start: vcn.checked_mul(g.cluster)?,
                 len: clusters.checked_mul(g.cluster)?,
                 physical: lcn.checked_mul(g.cluster)?,
-            });
+            };
+            // Reads add offsets within an extent to both ends.
+            extent.start.checked_add(extent.len)?;
+            extent.physical.checked_add(extent.len)?;
+            extents.push(extent);
             vcn = vcn.checked_add(clusters)?;
             Some(())
         })
@@ -616,8 +620,12 @@ fn parse_record(record: &mut [u8], number: u32, cluster: u64, info: &mut Info, o
     };
     let owner = if base == 0 {
         number
+    } else if let Ok(owner) = u32::try_from(base & RECORD_NUMBER) {
+        owner
     } else {
-        (base & RECORD_NUMBER) as u32
+        // No volume this reader accepts has that many records: corrupt.
+        out.torn.push(number);
+        return;
     };
     let names_before = (out.links.len(), out.names.len());
     let mut own = Info {
@@ -849,10 +857,7 @@ fn walk(table: &Table, root: u32, root_id: usize, at: &Path, worker: &mut Worker
                         node.allocated = info.allocated;
                     } else {
                         worker.summary.hard_links += 1;
-                        append_note(
-                            &mut node.note,
-                            "Hard-link alias: allocated bytes attributed to another path in this scan",
-                        );
+                        append_note(&mut node.note, super::HARD_LINK_ALIAS);
                     }
                     if info.named > 0 {
                         append_note(

@@ -432,10 +432,7 @@ mod native {
                 if !worker.seen.insert(FileIdentity(volume, identity)) {
                     worker.summary.hard_links += 1;
                     node.allocated = 0;
-                    append_note(
-                        &mut node.note,
-                        "Hard-link alias: allocated bytes attributed to another path in this scan",
-                    );
+                    append_note(&mut node.note, crate::storage::HARD_LINK_ALIAS);
                 }
             }
         }

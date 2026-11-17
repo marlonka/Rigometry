@@ -27,6 +27,8 @@ const MAX_RETAINED_BYTES: usize = 1536 * 1024 * 1024;
 const MAX_NOTE_BYTES: usize = 4096;
 const NOTE_TRUNCATED: &str = "… [additional details omitted]";
 const METADATA_UNAVAILABLE: &str = "Metadata unavailable";
+const HARD_LINK_ALIAS: &str =
+    "Hard-link alias: allocated bytes attributed to another path in this scan";
 
 /// One scanned entry. Paths are not stored: at millions of entries they would
 /// be the largest part of the tree. `node_path` rebuilds them from names; the
@@ -472,10 +474,7 @@ impl Worker {
                     {
                         self.summary.hard_links += 1;
                         info.allocated = 0;
-                        append_note(
-                            &mut info.note,
-                            "Hard-link alias: allocated bytes attributed to another path in this scan",
-                        );
+                        append_note(&mut info.note, HARD_LINK_ALIAS);
                     }
                     node.allocated = info.allocated;
                     node.note = info.note;

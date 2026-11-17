@@ -46,7 +46,7 @@ BEGIN
             VALUE "FileDescription", "Hardware monitoring and storage analysis\0"
             VALUE "FileVersion", "{version}\0"
             VALUE "InternalName", "rigometry\0"
-            VALUE "LegalCopyright", "Copyright (c) 2026 Marlon\0"
+            VALUE "LegalCopyright", "Copyright (c) 2026 Marlon Kaulich\0"
             VALUE "OriginalFilename", "Rigometry.exe\0"
             VALUE "ProductName", "Rigometry\0"
             VALUE "ProductVersion", "{version}\0"

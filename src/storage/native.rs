@@ -38,7 +38,14 @@ impl Drop for OwnedHandle {
 pub(super) fn wide(path: &Path) -> Vec<u16> {
     // std::fs accepts long paths, but direct Win32 calls need the extended-path
     // prefix independently of the executable's longPathAware manifest.
-    let path = std::path::absolute(path).unwrap_or_else(|_| path.into());
+    // Absolute paths are prefixed as they are: normalizing them again would
+    // strip a trailing dot or space from names such as `foo.`, opening a
+    // sibling `foo` instead. Scan roots are normalized once, when checked.
+    let path = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        std::path::absolute(path).unwrap_or_else(|_| path.into())
+    };
     let raw: Vec<u16> = path.as_os_str().encode_wide().collect();
     let mut value = if raw.starts_with(&[92, 92, 63, 92]) {
         raw
@@ -229,7 +236,7 @@ pub(super) fn open_contents(
     reparse_point: bool,
     sequential: bool,
 ) -> std::io::Result<fs::File> {
-    use std::os::windows::fs::OpenOptionsExt;
+    use std::os::windows::{ffi::OsStringExt, fs::OpenOptionsExt};
     let mut flags = FILE_FLAG_OPEN_NO_RECALL.0;
     if reparse_point {
         flags |= FILE_FLAG_OPEN_REPARSE_POINT.0;
@@ -237,11 +244,15 @@ pub(super) fn open_contents(
     if sequential {
         flags |= FILE_FLAG_SEQUENTIAL_SCAN.0;
     }
+    // The same verbatim path as every other handle: Win32 normalization
+    // would turn a folder named `foo.` into its sibling `foo`.
+    let mut verbatim = wide(path);
+    verbatim.pop();
     fs::OpenOptions::new()
         .read(true)
         .share_mode(FILE_SHARE_READ.0 | FILE_SHARE_WRITE.0 | FILE_SHARE_DELETE.0)
         .custom_flags(flags)
-        .open(path)
+        .open(std::ffi::OsString::from_wide(&verbatim))
 }
 
 pub(super) fn read_entry(path: &Path, metadata: &fs::Metadata) -> EntryInfo {
@@ -401,7 +412,7 @@ pub(super) fn read_entry(path: &Path, metadata: &fs::Metadata) -> EntryInfo {
             }
             // FAT/exFAT do not implement named streams. Preserve the default
             // stream's standard metadata and explain that distinction.
-            if matches!(error.code().0 as u32 & 0xffff, 1 | 50 | 87) {
+            if matches!(win32_code(&error), Some(1 | 50 | 87)) {
                 append_note(
                     &mut result.note,
                     "Named stream enumeration unsupported by this filesystem",
@@ -526,11 +537,11 @@ fn streams(handle: HANDLE) -> windows::core::Result<Vec<Stream>> {
                 });
             }
             Err(error) => {
-                let code = error.code().0 as u32 & 0xffff;
-                if code == 38 {
+                let code = win32_code(&error);
+                if code == Some(38) {
                     return Ok(Vec::new());
                 } // ERROR_HANDLE_EOF: empty directory.
-                if matches!(code, 24 | 122 | 234) && words.len() < 131_072 {
+                if matches!(code, Some(24 | 122 | 234)) && words.len() < 131_072 {
                     words.resize(words.len() * 2, 0); // <= 1 MiB per-file bound.
                     continue;
                 }
