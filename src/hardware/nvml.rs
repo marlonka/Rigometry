@@ -474,7 +474,13 @@ fn driver_library_paths() -> Result<Vec<PathBuf>, String> {
                 let length = root.iter().position(|v| *v == 0).unwrap_or(root.len());
                 let directory = PathBuf::from(OsString::from_wide(&root[..length]));
                 if directory.is_absolute() {
-                    paths.push(directory.join("NVIDIA Corporation/NVSMI/nvml.dll"));
+                    // Backslashes only: LoadLibraryExW derives the DLL's folder from them.
+                    paths.push(
+                        directory
+                            .join("NVIDIA Corporation")
+                            .join("NVSMI")
+                            .join("nvml.dll"),
+                    );
                 }
             }
         }

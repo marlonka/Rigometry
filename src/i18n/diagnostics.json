@@ -1157,10 +1157,58 @@
     "{0} est relatif au lecteur ; ajoutez une barre oblique inverse après la lettre de lecteur, par exemple {1}\\",
     "{0} es relativa a la unidad; añade una barra invertida tras la letra de unidad, por ejemplo {1}\\"
   ],
-  ["The scan of this folder is partial; files it did not reach were not compared.", "Die Analyse dieses Ordners ist unvollständig; Dateien, die sie nicht erreicht hat, wurden nicht verglichen.", "L’analyse de ce dossier est partielle ; les fichiers qu’elle n’a pas atteints n’ont pas été comparés.", "El análisis de esta carpeta es parcial; los archivos a los que no llegó no se compararon."],
-  ["ReFS can share blocks between copies (block cloning); deleting a copy can free less than shown.", "ReFS kann Blöcke zwischen Kopien teilen (Blockklonen); das Löschen einer Kopie kann weniger freigeben als angezeigt.", "ReFS peut partager des blocs entre copies (clonage de blocs) ; supprimer une copie peut libérer moins que l’espace indiqué.", "ReFS puede compartir bloques entre copias (clonación de bloques); eliminar una copia puede liberar menos de lo indicado."],
-  ["Network drives may not report file identities, so hard links there can appear as copies.", "Netzlaufwerke melden Dateiidentitäten möglicherweise nicht; Hardlinks können dort als Kopien erscheinen.", "Les lecteurs réseau peuvent ne pas indiquer l’identité des fichiers ; les liens physiques peuvent alors apparaître comme des copies.", "Las unidades de red pueden no informar de la identidad de los archivos; allí los vínculos físicos pueden aparecer como copias."],
-  ["{0} files could not be read; copies among them are not reported.", "{0} Dateien konnten nicht gelesen werden; Kopien unter ihnen werden nicht gemeldet.", "{0} fichiers n’ont pas pu être lus ; les copies parmi eux ne sont pas signalées.", "No se pudieron leer {0} archivos; las copias entre ellos no se indican."],
-  ["Could not start duplicate search: {0}", "Duplikatsuche konnte nicht gestartet werden: {0}", "Impossible de lancer la recherche de doublons : {0}", "No se pudo iniciar la búsqueda de duplicados: {0}"],
-  ["Duplicate search stopped before completion; results are incomplete", "Duplikatsuche vor dem Abschluss beendet; Ergebnisse sind unvollständig", "La recherche de doublons s’est arrêtée avant la fin ; les résultats sont incomplets", "La búsqueda de duplicados se detuvo antes de terminar; los resultados están incompletos"]
+  [
+    "The scan of this folder is partial; files it did not reach were not compared.",
+    "Die Analyse dieses Ordners ist unvollständig; Dateien, die sie nicht erreicht hat, wurden nicht verglichen.",
+    "L’analyse de ce dossier est partielle ; les fichiers qu’elle n’a pas atteints n’ont pas été comparés.",
+    "El análisis de esta carpeta es parcial; los archivos a los que no llegó no se compararon."
+  ],
+  [
+    "ReFS can share blocks between copies (block cloning); deleting a copy can free less than shown.",
+    "ReFS kann Blöcke zwischen Kopien teilen (Blockklonen); das Löschen einer Kopie kann weniger freigeben als angezeigt.",
+    "ReFS peut partager des blocs entre copies (clonage de blocs) ; supprimer une copie peut libérer moins que l’espace indiqué.",
+    "ReFS puede compartir bloques entre copias (clonación de bloques); eliminar una copia puede liberar menos de lo indicado."
+  ],
+  [
+    "Network drives may not report file identities, so hard links there can appear as copies.",
+    "Netzlaufwerke melden Dateiidentitäten möglicherweise nicht; Hardlinks können dort als Kopien erscheinen.",
+    "Les lecteurs réseau peuvent ne pas indiquer l’identité des fichiers ; les liens physiques peuvent alors apparaître comme des copies.",
+    "Las unidades de red pueden no informar de la identidad de los archivos; allí los vínculos físicos pueden aparecer como copias."
+  ],
+  [
+    "{0} files could not be read; copies among them are not reported.",
+    "{0} Dateien konnten nicht gelesen werden; Kopien unter ihnen werden nicht gemeldet.",
+    "{0} fichiers n’ont pas pu être lus ; les copies parmi eux ne sont pas signalées.",
+    "No se pudieron leer {0} archivos; las copias entre ellos no se indican."
+  ],
+  [
+    "Could not start duplicate search: {0}",
+    "Duplikatsuche konnte nicht gestartet werden: {0}",
+    "Impossible de lancer la recherche de doublons : {0}",
+    "No se pudo iniciar la búsqueda de duplicados: {0}"
+  ],
+  [
+    "Duplicate search stopped before completion; results are incomplete",
+    "Duplikatsuche vor dem Abschluss beendet; Ergebnisse sind unvollständig",
+    "La recherche de doublons s’est arrêtée avant la fin ; les résultats sont incomplets",
+    "La búsqueda de duplicados se detuvo antes de terminar; los resultados están incompletos"
+  ],
+  [
+    "{0} did not finish within {1} s",
+    "{0} wurde nicht innerhalb von {1} s fertig",
+    "{0} ne s’est pas terminé en {1} s",
+    "{0} no terminó en {1} s"
+  ],
+  [
+    "Firmware does not name the memory type",
+    "Die Firmware nennt keinen Speichertyp",
+    "Le micrologiciel n’indique pas le type de mémoire",
+    "El firmware no indica el tipo de memoria"
+  ],
+  [
+    "The display driver reports no such sensor",
+    "Der Grafiktreiber meldet keinen solchen Sensor",
+    "Le pilote graphique ne signale pas ce capteur",
+    "El controlador gráfico no informa de este sensor"
+  ]
 ]

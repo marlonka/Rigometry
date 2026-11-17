@@ -102,12 +102,21 @@ impl CpuMonitor {
                 return missing(&e);
             }
         };
-        let Some(previous) = self.previous.replace(current.clone()) else {
+        let Some(previous) = self.previous.take() else {
+            self.previous = Some(current);
             return missing("Waiting for two successful processor-time samples");
         };
-        if previous.len() != current.len() {
-            return missing("Processor topology changed; collecting a new baseline");
+        // Within one clock tick of the baseline nothing has advanced yet: keep
+        // it for the next sample instead of reporting every core as failed.
+        if previous
+            .iter()
+            .zip(&current)
+            .all(|(old, new)| old.KernelTime == new.KernelTime && old.UserTime == new.UserTime)
+        {
+            self.previous = Some(previous);
+            return missing("Waiting for two successful processor-time samples");
         }
+        self.previous = Some(current.clone());
         // Up to 4096 independently valid 64-bit deltas can exceed u64.
         let mut busy = 0u128;
         let mut total = 0u128;
@@ -318,7 +327,7 @@ pub(super) fn discover(result: &mut Inventory) {
     topology(&mut result.cpu, &mut result.diagnostics);
     match adapters() {
         Ok(adapters) => {
-            for (native, mut adapter) in adapters {
+            for (_, mut adapter) in adapters {
                 if let Some(kmt) = parse_luid(&adapter.id).and_then(|id| Kmt::open(id).ok()) {
                     match kmt.query::<D3DKMT_ADAPTERADDRESS>() {
                         Ok(address) => adapter.fields.push(pci_field(address)),
@@ -360,7 +369,6 @@ pub(super) fn discover(result: &mut Inventory) {
                         )),
                     }
                 }
-                let _ = native;
                 result.adapters.push(adapter);
             }
         }
@@ -595,6 +603,23 @@ impl KmtOutput for D3DKMT_ADAPTER_PERFDATA {
 impl KmtOutput for D3DKMT_NODE_PERFDATA {
     const KIND: KMTQUERYADAPTERINFOTYPE = KMTQAITYPE_NODEPERFDATA;
 }
+impl KmtOutput for D3DKMT_ADAPTER_PERFDATACAPS {
+    const KIND: KMTQUERYADAPTERINFOTYPE = KMTQAITYPE_ADAPTERPERFDATA_CAPS;
+}
+
+/// A driver that fills the performance structures without having a sensor
+/// returns zeros. Zero is a reading only where the driver also reports a
+/// nonzero capability for it; a nonzero value is always kept.
+fn sensor(value: f64, capability: Option<u64>, unit: &str, source: &str) -> Reading {
+    if value == 0.0 && capability == Some(0) {
+        let mut reading =
+            Reading::missing(unit, source, "The display driver reports no such sensor");
+        reading.state = Availability::Unsupported;
+        reading
+    } else {
+        Reading::valid(value, unit, source)
+    }
+}
 
 struct Kmt(u32);
 impl Kmt {
@@ -649,6 +674,8 @@ struct LiveAdapter {
     adapter: Adapter,
     dxgi: Option<IDXGIAdapter3>,
     kmt: Option<Kmt>,
+    /// Sensor ranges, which do not change while the driver runs.
+    caps: Option<D3DKMT_ADAPTER_PERFDATACAPS>,
 }
 pub(super) struct GpuMonitor {
     adapters: Vec<LiveAdapter>,
@@ -660,13 +687,17 @@ impl GpuMonitor {
         let native = adapters().unwrap_or_default();
         let adapters = inventory
             .iter()
-            .map(|adapter| LiveAdapter {
-                adapter: adapter.clone(),
-                dxgi: native
-                    .iter()
-                    .find(|(_, a)| a.id == adapter.id)
-                    .and_then(|(n, _)| n.cast().ok()),
-                kmt: parse_luid(&adapter.id).and_then(|luid| Kmt::open(luid).ok()),
+            .map(|adapter| {
+                let kmt = parse_luid(&adapter.id).and_then(|luid| Kmt::open(luid).ok());
+                LiveAdapter {
+                    adapter: adapter.clone(),
+                    dxgi: native
+                        .iter()
+                        .find(|(_, a)| a.id == adapter.id)
+                        .and_then(|(n, _)| n.cast().ok()),
+                    caps: kmt.as_ref().and_then(|k| k.query().ok()),
+                    kmt,
+                }
             })
             .collect();
         Self {
@@ -698,13 +729,14 @@ impl GpuMonitor {
                 }
             }
             let perf=live.kmt.as_ref().ok_or_else(||"D3DKMT adapter handle unavailable".into()).and_then(|k|k.query::<D3DKMT_ADAPTER_PERFDATA>());
-            for (label,unit,value) in [("Temperature","°C",perf.as_ref().map(|p|p.Temperature as f64 / 10.0)),("Fan","RPM",perf.as_ref().map(|p|p.FanRPM as f64)),("Power (driver percentage)","%",perf.as_ref().map(|p|p.Power as f64 / 10.0))] {
-                readings.push((label.into(),match value {Ok(v)=>Reading::valid(v,unit,"D3DKMT_ADAPTER_PERFDATA / WDDM driver"),Err(e)=>unsupported(unit,"D3DKMT_ADAPTER_PERFDATA",e)}));
+            let caps = live.caps.as_ref();
+            for (label,unit,value,capability) in [("Temperature","°C",perf.as_ref().map(|p|p.Temperature as f64 / 10.0),caps.map(|c|c.TemperatureMax as u64)),("Fan","RPM",perf.as_ref().map(|p|p.FanRPM as f64),caps.map(|c|c.MaxFanRPM as u64)),("Power (driver percentage)","%",perf.as_ref().map(|p|p.Power as f64 / 10.0),None)] {
+                readings.push((label.into(),match value {Ok(v)=>sensor(v,capability,unit,"D3DKMT_ADAPTER_PERFDATA / WDDM driver"),Err(e)=>unsupported(unit,"D3DKMT_ADAPTER_PERFDATA",e)}));
             }
-            readings.push(("Memory clock".into(),match &perf {Ok(p)=>d3d_clock(p.MemoryFrequency,"D3DKMT_ADAPTER_PERFDATA / WDDM driver"),Err(e)=>unsupported("MHz","D3DKMT_ADAPTER_PERFDATA",e)}));
+            readings.push(("Memory clock".into(),match &perf {Ok(p) if p.MemoryFrequency==0 && p.MaxMemoryFrequency==0=>sensor(0.,Some(0),"MHz","D3DKMT_ADAPTER_PERFDATA / WDDM driver"),Ok(p)=>d3d_clock(p.MemoryFrequency,"D3DKMT_ADAPTER_PERFDATA / WDDM driver"),Err(e)=>unsupported("MHz","D3DKMT_ADAPTER_PERFDATA",e)}));
             let node=live.kmt.as_ref().ok_or_else(||"D3DKMT adapter handle unavailable".into()).and_then(|k|k.query::<D3DKMT_NODE_PERFDATA>());
-            readings.push(("Engine 0 clock".into(),match &node {Ok(p)=>d3d_clock(p.Frequency,"D3DKMT_NODE_PERFDATA / engine 0"),Err(e)=>unsupported("MHz","D3DKMT_NODE_PERFDATA",e)}));
-            readings.push(("Engine 0 voltage".into(),match &node {Ok(p)=>Reading::valid(p.Voltage as f64,"mV","D3DKMT_NODE_PERFDATA / engine 0"),Err(e)=>unsupported("mV","D3DKMT_NODE_PERFDATA",e)}));
+            readings.push(("Engine 0 clock".into(),match &node {Ok(p) if p.Frequency==0 && p.MaxFrequency==0=>sensor(0.,Some(0),"MHz","D3DKMT_NODE_PERFDATA / engine 0"),Ok(p)=>d3d_clock(p.Frequency,"D3DKMT_NODE_PERFDATA / engine 0"),Err(e)=>unsupported("MHz","D3DKMT_NODE_PERFDATA",e)}));
+            readings.push(("Engine 0 voltage".into(),match &node {Ok(p)=>sensor(p.Voltage as f64,Some(p.VoltageMax as u64),"mV","D3DKMT_NODE_PERFDATA / engine 0"),Err(e)=>unsupported("mV","D3DKMT_NODE_PERFDATA",e)}));
             if live.adapter.vendor_id==0x10de {
                 match &self.nvml {
                     Ok(nvml)=>nvml.sample(&live.adapter,&mut readings),

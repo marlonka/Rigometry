@@ -155,7 +155,11 @@ const SYSINFO_SOURCE: &str = if cfg!(windows) {
 #[cfg(target_arch = "x86_64")]
 fn cpu_identity(fields: &mut Vec<Field>, _: &System) {
     let cpuid = raw_cpuid::CpuId::new();
-    if let Some(brand) = cpuid.get_processor_brand_string() {
+    // Some hypervisors report an empty brand string: no model, not a blank one.
+    if let Some(brand) = cpuid
+        .get_processor_brand_string()
+        .filter(|brand| !brand.as_str().trim().is_empty())
+    {
         fields.push(Field::valid(
             "Model",
             brand.as_str().trim(),
@@ -385,16 +389,20 @@ impl Monitor {
         let mut system = System::new();
         system.refresh_cpu_all();
         system.refresh_memory();
+        #[cfg(windows)]
+        let gpu = windows::GpuMonitor::new(&inventory.adapters);
+        #[cfg(target_os = "macos")]
+        let gpu = macos::GpuMonitor::new(&inventory.adapters);
         Self {
+            // The processor-time baseline comes last, after the slow GPU
+            // setup, so the first interval is not just that setup.
             #[cfg(windows)]
             cpu: windows::CpuMonitor::new(system.cpus().len()),
             system,
             #[cfg(not(windows))]
             first: true,
-            #[cfg(windows)]
-            gpu: windows::GpuMonitor::new(&inventory.adapters),
-            #[cfg(target_os = "macos")]
-            gpu: macos::GpuMonitor::new(&inventory.adapters),
+            #[cfg(any(windows, target_os = "macos"))]
+            gpu,
         }
     }
     pub fn sample(&mut self) -> Telemetry {

@@ -198,13 +198,21 @@ fn parse_table(raw: &[u8], result: &mut Inventory) -> Result<(), String> {
                             ));
                         }
                     }
-                    if let Some(ty) = record.get(18) {
-                        result.memory.push(Field::valid(
+                    match record.get(18) {
+                        // 1 is "Other" and 2 "Unknown": firmware placeholders, not types.
+                        Some(1 | 2) => result.memory.push(Field::missing(
+                            format!("{prefix} type"),
+                            Availability::Unavailable,
+                            &source,
+                            "Firmware does not name the memory type",
+                        )),
+                        Some(ty) => result.memory.push(Field::valid(
                             format!("{prefix} type"),
                             memory_type(*ty),
                             "",
                             &source,
-                        ));
+                        )),
+                        None => {}
                     }
                     for (label, offset, extended) in [
                         ("rated transfer rate", 21, 84),

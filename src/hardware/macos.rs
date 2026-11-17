@@ -71,18 +71,53 @@ mod sys {
     }
 }
 
+/// Runs a system tool for its output. A tool that hangs is stopped after
+/// 30 seconds, so it cannot stall discovery or sampling for good.
 #[cfg(target_os = "macos")]
 fn run(program: &str, args: &[&str]) -> Result<String, String> {
-    let output = std::process::Command::new(program)
+    use std::{
+        io::Read,
+        process::Stdio,
+        time::{Duration, Instant},
+    };
+    const TIMEOUT: Duration = Duration::from_secs(30);
+    let mut child = std::process::Command::new(program)
         .args(args)
-        .stdin(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .output()
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
         .map_err(|error| format!("{program}: {error}"))?;
-    if !output.status.success() {
-        return Err(format!("{program} exited with {}", output.status));
+    // Read while waiting: a full pipe would otherwise block the tool.
+    let mut stdout = child.stdout.take().expect("piped stdout");
+    let reader = std::thread::spawn(move || {
+        let mut output = Vec::new();
+        stdout.read_to_end(&mut output).map(|_| output)
+    });
+    let deadline = Instant::now() + TIMEOUT;
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) if Instant::now() < deadline => std::thread::sleep(Duration::from_millis(20)),
+            Ok(None) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(format!(
+                    "{program} did not finish within {} s",
+                    TIMEOUT.as_secs()
+                ));
+            }
+            Err(error) => return Err(format!("{program}: {error}")),
+        }
+    };
+    let output = reader
+        .join()
+        .map_err(|_| format!("{program}: output reader failed"))?
+        .map_err(|error| format!("{program}: {error}"))?;
+    if !status.success() {
+        return Err(format!("{program} exited with {status}"));
     }
-    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+    Ok(String::from_utf8_lossy(&output).into_owned())
 }
 
 #[cfg(target_os = "macos")]
@@ -498,14 +533,16 @@ fn parse_ioreg(output: &str) -> Vec<Accelerator> {
 }
 
 /// Registry classes name the driver family, which is how adapters are paired.
+/// Case-insensitively: Apple's Kepler driver class is `nvAccelerator`.
 fn class_vendor(class: &str) -> u32 {
-    if class.starts_with("AGX") {
+    let class = class.to_ascii_lowercase();
+    if class.starts_with("agx") {
         0x106b
-    } else if class.starts_with("Intel") {
+    } else if class.starts_with("intel") {
         0x8086
-    } else if class.starts_with("AMD") || class.starts_with("ATI") || class.contains("Radeon") {
+    } else if class.starts_with("amd") || class.starts_with("ati") || class.contains("radeon") {
         0x1002
-    } else if class.starts_with("NV") || class.starts_with("GeForce") {
+    } else if class.starts_with("nv") || class.starts_with("geforce") {
         0x10de
     } else {
         0
@@ -537,9 +574,11 @@ fn readings(adapter: &Adapter, accelerators: &[Accelerator]) -> Vec<(String, Rea
         .iter()
         .filter(|a| class_vendor(&a.class) == adapter.vendor_id)
         .collect();
+    // A lone accelerator of unknown family may belong to the adapter; one of
+    // another vendor never does (an unplugged eGPU must not show the iGPU's load).
     let matched = match (candidates.as_slice(), accelerators) {
         ([one], _) => Some(*one),
-        ([], [only]) => Some(only),
+        ([], [only]) if adapter.vendor_id == 0 || class_vendor(&only.class) == 0 => Some(only),
         _ => None,
     };
     SENSORS
@@ -763,6 +802,15 @@ mod tests {
         assert_eq!(amd["Temperature"].value, Some(48.0));
         assert_eq!(amd["Core clock"].value, Some(300.0));
         assert_eq!(amd["Power"].value, Some(5.0));
+        // With the AMD GPU's statistics gone (an unplugged eGPU), the one
+        // remaining accelerator is Intel's and must not become the AMD reading.
+        let intel_only: Vec<_> = accelerators
+            .into_iter()
+            .filter(|a| class_vendor(&a.class) == 0x8086)
+            .collect();
+        let amd: BTreeMap<_, _> = readings(&gpus[1], &intel_only).into_iter().collect();
+        assert_eq!(amd["Utilization"].value, None);
+        assert_eq!(class_vendor("nvAccelerator"), 0x10de);
     }
 
     #[test]
