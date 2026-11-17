@@ -180,7 +180,7 @@ impl App {
         ui.with_layout(Layout::bottom_up(Align::Min), |ui| {
             if !dense {
                 ui.add_space(8.);
-                ui.label(RichText::new(PLATFORM_LABEL).size(12.).color(muted(ui)));
+                caption(ui, PLATFORM_LABEL);
                 ui.add_space(16.);
             }
             if navigation(
@@ -216,11 +216,7 @@ impl App {
                 }
             } else {
                 ui.add_space(22.);
-                ui.label(
-                    RichText::new(tx(ui, "Reading hardware…"))
-                        .size(12.)
-                        .color(muted(ui)),
-                );
+                caption(ui, tx(ui, "Reading hardware…"));
             }
         });
     }
@@ -417,17 +413,16 @@ impl App {
                             self.state.start_scan();
                         }
                     });
-                    ui.label(
-                        RichText::new(td(
+                    caption(
+                        ui,
+                        td(
                             ui,
                             format!(
                                 "{} · {}",
                                 drive.file_system,
                                 ui_bytes(ui, drive.total_bytes)
                             ),
-                        ))
-                        .size(12.)
-                        .color(muted(ui)),
+                        ),
                     );
                     ui.label(
                         RichText::new(td(
@@ -480,7 +475,7 @@ impl App {
                         vec!["Drive", "Used", "Free", "Capacity", ""]
                     } {
                         row.col(|ui| {
-                            ui.label(RichText::new(tx(ui, label)).size(12.).color(muted(ui)));
+                            caption(ui, tx(ui, label));
                         });
                     }
                 })
@@ -561,12 +556,9 @@ impl App {
                 });
         });
         ui.add_space(8.);
-        ui.label(
-            RichText::new(
-                "Drive space is a volume snapshot; scan totals exclude filesystem overhead.",
-            )
-            .size(12.)
-            .color(muted(ui)),
+        caption(
+            ui,
+            "Drive space is a volume snapshot; scan totals exclude filesystem overhead.",
         );
     }
 
@@ -970,20 +962,12 @@ impl App {
         panel(ui, |ui| {
             if ui.available_width() < 400. {
                 ui.label(RichText::new(tx(ui, "Sensors")).size(17.));
-                ui.label(
-                    RichText::new(tx(ui, "Minimum / maximum · last 120 s"))
-                        .size(12.)
-                        .color(muted(ui)),
-                );
+                caption(ui, tx(ui, "Minimum / maximum · last 120 s"));
             } else {
                 ui.horizontal(|ui| {
                     ui.label(RichText::new(tx(ui, "Sensors")).size(17.));
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        ui.label(
-                            RichText::new(tx(ui, "Minimum / maximum · last 120 s"))
-                                .size(12.)
-                                .color(muted(ui)),
-                        );
+                        caption(ui, tx(ui, "Minimum / maximum · last 120 s"));
                     });
                 });
             }
@@ -1250,13 +1234,12 @@ impl App {
         // File sizes only add information where compression, sparse files or
         // cluster rounding make them differ noticeably from bytes on disk.
         if scope_logical.abs_diff(scope_allocated) > scope_allocated.max(scope_logical) / 100 {
-            ui.label(
-                RichText::new(td(
+            caption(
+                ui,
+                td(
                     ui,
                     format!("File size: {lower_bound}{}", ui_bytes(ui, scope_logical)),
-                ))
-                .size(12.)
-                .color(muted(ui)),
+                ),
             );
         }
         ui.add_space(6.);
@@ -1378,11 +1361,7 @@ impl App {
             && self.state.visible_filter == self.state.filter
         {
             ui.add_space(4.);
-            ui.label(
-                RichText::new(tx(ui, "No matches below this folder"))
-                    .size(12.)
-                    .color(muted(ui)),
-            );
+            caption(ui, tx(ui, "No matches below this folder"));
         }
         ui.add_space(16.);
         let viewport_height = ui.ctx().content_rect().height();
@@ -1444,8 +1423,8 @@ impl App {
                     i18n::language(ui).decimal(share(node.allocated, total), 1)
                 ),
             ] {
-                ui.label(RichText::new("·").size(12.).color(muted(ui)));
-                ui.label(RichText::new(td(ui, text)).size(12.).color(muted(ui)));
+                caption(ui, "·");
+                caption(ui, td(ui, text));
             }
         });
         ui.horizontal_wrapped(|ui| {
@@ -1463,16 +1442,15 @@ impl App {
             if self.state.view == View::Duplicates {
                 return;
             }
-            ui.label(
-                RichText::new(td(
+            caption(
+                ui,
+                td(
                     ui,
                     format!(
                         "{} entries",
                         i18n::language(ui).integer(self.state.visible.len() as u64)
                     ),
-                ))
-                .size(12.)
-                .color(muted(ui)),
+                ),
             );
         });
         if let Some(summary) = &self.state.summary {
@@ -1705,25 +1683,26 @@ impl App {
         });
         ui.add_space(8.);
         let Some(found) = &self.state.duplicates else {
-            ui.label(
-                RichText::new(tx(ui, "Copies are files with the same size and the same BLAKE3 hash of their contents. Further hard links of one file are not copies; nothing is changed or deleted."))
-                    .size(12.)
-                    .color(muted(ui)),
+            caption(
+                ui,
+                tx(
+                    ui,
+                    "Copies are files with the same size and the same BLAKE3 hash of their contents. Further hard links of one file are not copies; nothing is changed or deleted.",
+                ),
             );
             return;
         };
         let nodes = &self.state.nodes;
         if found.root != self.state.scope {
-            ui.label(
-                RichText::new(td(
+            caption(
+                ui,
+                td(
                     ui,
                     format!(
                         "Results for {}",
                         crate::storage::node_path(nodes, found.root).display()
                     ),
-                ))
-                .size(12.)
-                .color(muted(ui)),
+                ),
             );
         }
         let lang = i18n::language(ui);
@@ -1857,15 +1836,12 @@ impl App {
                                 row.col(|ui| {
                                     ui.push_id(("copy", id), |ui| {
                                         ui.add_space(24.);
-                                        let folder = node
-                                            .parent
-                                            .map(|p| crate::storage::node_path(nodes, p))
-                                            .unwrap_or_default();
+                                        let folder = relative_folder(nodes, id, found.root);
                                         let mut job = egui::text::LayoutJob::default();
                                         let font = FontId::proportional(14.);
                                         job.append(&node.name, 0., TextFormat::simple(font.clone(), ui.visuals().text_color()));
                                         job.append(
-                                            &folder.to_string_lossy(),
+                                            &folder,
                                             12.,
                                             TextFormat::simple(FontId::proportional(12.), muted(ui)),
                                         );
@@ -2051,11 +2027,7 @@ impl App {
             }
         }
         ui.add_space(10.);
-        ui.label(
-            RichText::new(tx(ui, "Area = size on disk · double-click to open"))
-                .size(12.)
-                .color(muted(ui)),
-        );
+        caption(ui, tx(ui, "Area = size on disk · double-click to open"));
         self.apply_entry_action(ui, action);
         clicked
     }
@@ -2453,11 +2425,7 @@ impl eframe::App for App {
                             ui.label(RichText::new(td(ui, notice)).size(12.));
                         }
                         if self.state.task.is_some() {
-                            ui.label(
-                                RichText::new(tx(ui, "File dialog / export in progress"))
-                                    .size(12.)
-                                    .color(muted(ui)),
-                            );
+                            caption(ui, tx(ui, "File dialog / export in progress"));
                         } else if self.state.scan.is_some()
                             && self.state.settings.page != Page::Storage
                         {
@@ -2538,90 +2506,33 @@ fn apply_style(ctx: &Context, settings: &Settings) {
                 ..egui::style::ScrollStyle::solid()
             };
             style.animation_time = if settings.reduce_motion { 0. } else { 0.12 };
-            style
-                .text_styles
-                .insert(TextStyle::Body, FontId::proportional(14.));
-            style
-                .text_styles
-                .insert(TextStyle::Button, FontId::proportional(14.));
-            style
-                .text_styles
-                .insert(TextStyle::Small, FontId::proportional(12.));
-            style
-                .text_styles
-                .insert(TextStyle::Heading, FontId::proportional(26.));
+            for (text, size) in [
+                (TextStyle::Body, 14.),
+                (TextStyle::Button, 14.),
+                (TextStyle::Small, 12.),
+                (TextStyle::Heading, 26.),
+            ] {
+                style.text_styles.insert(text, FontId::proportional(size));
+            }
+            // Monochrome palette: each pair is (dark theme, light theme) gray.
+            let gray = |on_dark: u8, on_light: u8| {
+                Color32::from_gray(if dark { on_dark } else { on_light })
+            };
             let v = &mut style.visuals;
-            v.panel_fill = if dark {
-                Color32::from_gray(14)
-            } else {
-                Color32::from_gray(252)
-            };
-            v.window_fill = if dark {
-                Color32::from_gray(30)
-            } else {
-                Color32::WHITE
-            };
-            v.faint_bg_color = if dark {
-                Color32::from_gray(23)
-            } else {
-                Color32::from_gray(242)
-            };
-            v.extreme_bg_color = if dark {
-                Color32::from_gray(20)
-            } else {
-                Color32::WHITE
-            };
-            v.override_text_color = Some(if dark {
-                Color32::from_gray(237)
-            } else {
-                Color32::from_gray(18)
-            });
-            v.selection.bg_fill = if dark {
-                Color32::from_gray(48)
-            } else {
-                Color32::from_gray(227)
-            };
-            v.selection.stroke = Stroke::new(
-                1.5f32,
-                if dark {
-                    Color32::from_gray(180)
-                } else {
-                    Color32::from_gray(80)
-                },
-            );
-            v.widgets.inactive.bg_fill = if dark {
-                Color32::from_gray(32)
-            } else {
-                Color32::from_gray(242)
-            };
+            v.panel_fill = gray(14, 252);
+            v.window_fill = gray(30, 255);
+            v.faint_bg_color = gray(23, 242);
+            v.extreme_bg_color = gray(20, 255);
+            v.override_text_color = Some(gray(237, 18));
+            v.selection.bg_fill = gray(48, 227);
+            v.selection.stroke = Stroke::new(1.5f32, gray(180, 80));
+            v.widgets.inactive.bg_fill = gray(32, 242);
             v.widgets.inactive.weak_bg_fill = v.widgets.inactive.bg_fill;
-            v.widgets.inactive.bg_stroke = Stroke::new(
-                1.0f32,
-                if dark {
-                    Color32::from_gray(70)
-                } else {
-                    Color32::from_gray(170)
-                },
-            );
-            v.widgets.hovered.bg_fill = if dark {
-                Color32::from_gray(45)
-            } else {
-                Color32::from_gray(231)
-            };
+            v.widgets.inactive.bg_stroke = Stroke::new(1.0f32, gray(70, 170));
+            v.widgets.hovered.bg_fill = gray(45, 231);
             v.widgets.hovered.weak_bg_fill = v.widgets.hovered.bg_fill;
-            v.widgets.active.bg_fill = if dark {
-                Color32::from_gray(55)
-            } else {
-                Color32::from_gray(218)
-            };
-            v.widgets.noninteractive.bg_stroke = Stroke::new(
-                1.0f32,
-                if dark {
-                    Color32::from_gray(46)
-                } else {
-                    Color32::from_gray(219)
-                },
-            );
+            v.widgets.active.bg_fill = gray(55, 218);
+            v.widgets.noninteractive.bg_stroke = Stroke::new(1.0f32, gray(46, 219));
             for w in [
                 &mut v.widgets.inactive,
                 &mut v.widgets.hovered,
@@ -2663,6 +2574,11 @@ fn accent(ui: &Ui, color: Color32) -> Color32 {
     } else {
         Color32::from_rgb(131, 97, 39)
     }
+}
+/// Small secondary text: hints, counts and status lines.
+fn caption(ui: &mut Ui, text: impl Into<String>) -> Response {
+    let color = muted(ui);
+    ui.label(RichText::new(text).size(12.).color(color))
 }
 fn ui_bytes(ui: &Ui, value: u64) -> String {
     i18n::language(ui).bytes(value)
@@ -2800,6 +2716,28 @@ fn loading(ui: &mut Ui, state: &State) {
             .unwrap_or("Reading hardware…"),
     ));
 }
+/// The folder holding `id`, from the searched folder `root` down: the part
+/// that tells copies apart, where a full path would be cut off before it.
+fn relative_folder(nodes: &[crate::storage::ScanNode], id: usize, root: usize) -> String {
+    let mut names = Vec::new();
+    let mut next = nodes.get(id).and_then(|node| node.parent);
+    while let Some(folder) = next {
+        let name = &nodes[folder].name;
+        if folder == root {
+            // The root's name is its full path; its last part is enough here.
+            names.push(
+                std::path::Path::new(name)
+                    .file_name()
+                    .map_or(name.clone(), |n| n.to_string_lossy().into_owned()),
+            );
+            break;
+        }
+        names.push(name.clone());
+        next = nodes[folder].parent;
+    }
+    names.reverse();
+    names.join(std::path::MAIN_SEPARATOR_STR)
+}
 /// Labels like "Module 2 capacity" belong to one memory module; "Module
 /// manufacturer" without a number describes them all.
 fn per_module(label: &str) -> bool {
@@ -2872,7 +2810,7 @@ fn field_table(ui: &mut Ui, id: &str, fields: &[Field]) {
                     let value = if f.state == Availability::Unavailable && f.source.starts_with("SMBIOS ") { tx(ui, "Not reported by firmware") } else { field_display(ui, f) };
                     let response=ui.add(Label::new(RichText::new(&value).size(13.).color(if f.value.is_some(){ui.visuals().text_color()}else{muted(ui)})).wrap().sense(Sense::click()));
                     if response.clicked(){ui.ctx().copy_text(value);}
-                    response.on_hover_text(td(ui, format!("Source: {}\nState: {}\n{}\nSample: {} ms since Unix epoch\nClick to copy",td(ui, &f.source),tx(ui, format!("{:?}", f.state)),td(ui, &f.detail),f.timestamp_ms)));
+                    response.on_hover_text(td(ui, format!("Source: {}\nState: {}\n{}\nSample: {} ms since Unix epoch\nClick to copy",td(ui, &f.source),tx(ui, state_label(&f.state)),td(ui, &f.detail),f.timestamp_ms)));
                 });
             });ui.add_space(5.);
         }
@@ -2887,7 +2825,7 @@ fn reading_row(ui: &mut Ui, label: &str, r: &Reading) {
             ui,
             format!(
                 "{} · {}\n{}",
-                tx(ui, format!("{:?}", r.state)),
+                tx(ui, state_label(&r.state)),
                 td(ui, &r.source),
                 td(ui, &r.detail)
             ),
@@ -2911,7 +2849,7 @@ fn reading_row(ui: &mut Ui, label: &str, r: &Reading) {
             format!(
                 "{}\n{} · {}\n{} ms since Unix epoch\nLast value: {}",
                 td(ui, &r.source),
-                tx(ui, format!("{:?}", r.state)),
+                tx(ui, state_label(&r.state)),
                 td(ui, &r.detail),
                 r.timestamp_ms,
                 r.value
@@ -2928,6 +2866,13 @@ fn reading_text(ui: &Ui, reading: &Reading) -> String {
         None
     }
     .unwrap_or_else(|| tx(ui, availability(&reading.state)))
+}
+/// A reading's state as a word, for tooltips and diagnostics.
+fn state_label(state: &Availability) -> &'static str {
+    match state {
+        Availability::Valid => "Valid",
+        _ => availability(state),
+    }
 }
 fn availability(state: &Availability) -> &'static str {
     match state {
@@ -3039,11 +2984,11 @@ fn sensor_table(
             {
                 row.col(|ui| {
                     if index == 0 {
-                        ui.label(RichText::new(tx(ui, *label)).size(12.).color(muted(ui)));
+                        caption(ui, tx(ui, *label));
                     } else {
                         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                             ui.add_space(4.);
-                            ui.label(RichText::new(tx(ui, *label)).size(12.).color(muted(ui)));
+                            caption(ui, tx(ui, *label));
                         });
                     }
                 });
@@ -3065,7 +3010,7 @@ fn sensor_table(
                                 ui,
                                 format!(
                                     "{} · {}\n{}\nLast value: {}",
-                                    tx(ui, format!("{:?}", r.state)),
+                                    tx(ui, state_label(&r.state)),
                                     td(ui, &r.source),
                                     td(ui, &r.detail),
                                     r.value
@@ -3180,7 +3125,7 @@ impl MetricChart<'_> {
                 ui.horizontal(|ui| {
                     ui.label(RichText::new(tx(ui, label)).size(13.).color(muted(ui)));
                     if stale {
-                        ui.label(RichText::new(tx(ui, "Stale")).size(12.).color(muted(ui)));
+                        caption(ui, tx(ui, "Stale"));
                     }
                     if let Some((label, _)) = secondary {
                         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
@@ -3361,18 +3306,17 @@ fn diagnostic_field(ui: &mut Ui, f: &Field) {
         ))
         .strong(),
     );
-    ui.label(
-        RichText::new(td(
+    caption(
+        ui,
+        td(
             ui,
             format!(
                 "{} · {} · {} ms",
-                tx(ui, format!("{:?}", f.state)),
+                tx(ui, state_label(&f.state)),
                 td(ui, &f.source),
                 f.timestamp_ms
             ),
-        ))
-        .size(12.)
-        .color(muted(ui)),
+        ),
     );
     if !f.detail.is_empty() {
         ui.label(td(ui, &f.detail));
@@ -3381,18 +3325,17 @@ fn diagnostic_field(ui: &mut Ui, f: &Field) {
 }
 fn reading_diagnostic(ui: &mut Ui, label: &str, r: &Reading) {
     reading_row(ui, label, r);
-    ui.label(
-        RichText::new(td(
+    caption(
+        ui,
+        td(
             ui,
             format!(
                 "{} · {} · {} ms",
-                tx(ui, format!("{:?}", r.state)),
+                tx(ui, state_label(&r.state)),
                 td(ui, &r.source),
                 r.timestamp_ms
             ),
-        ))
-        .size(12.)
-        .color(muted(ui)),
+        ),
     );
     ui.add_space(10.);
 }
