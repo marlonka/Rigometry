@@ -87,13 +87,14 @@ jobs:
         run: cargo test --all-targets --locked
       - name: Package universal app and verify checksums
         run: sh scripts/package-macos.sh Rigometry-ci-macos
-      - name: Headless report and scan from the packaged app
+      - name: Headless report, scan and duplicates from the packaged app
         run: |
           app=dist/Rigometry-ci-macos/Rigometry.app/Contents/MacOS/rigometry
           out=$(mktemp -d)
           "$app" --headless --report "$out/report.json"
           "$app" --headless --scan "$PWD/src" --export "$out/scan.json"
-          python3 -c 'import json,sys; [json.load(open(p)) for p in sys.argv[1:]]' "$out/report.json" "$out/scan.json"
+          "$app" --headless --scan "$PWD/src" --duplicates "$out/copies.json" --min-size 1
+          python3 -c 'import json,sys; r,s,d=[json.load(open(p)) for p in sys.argv[1:]]; assert s["status"]=="complete" and s["nodes"], s["status"]; assert d["kind"]=="duplicates" and d["status"]=="complete", d["status"]' "$out/report.json" "$out/scan.json" "$out/copies.json"
           grep -o '"Model"[^}]*' "$out/report.json" | head -n 3
           if arch -x86_64 /usr/bin/true 2>/dev/null; then
             arch -x86_64 "$app" --version
