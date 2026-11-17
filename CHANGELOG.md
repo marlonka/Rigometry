@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.0
 
 - **Duplicate files:** a new **Duplicates** view on the Storage page compares the files below the current folder by content, after a scan and only on request. Only same-size files are read; the first and last 16 KiB rule out most, and BLAKE3 hashes confirm the rest. The biggest savings appear first, the oldest copy leads each group, and the search filters groups. Hard links are not copies, APFS clones count only their own blocks, cloud files are never downloaded and changed files are left out. Export as CSV or JSON, or run `--headless --scan PATH --duplicates FILE [--min-size SIZE]`. [How it works](docs/usage.md#duplicate-files)
 - Scans in the window are as fast as headless scans: results no longer wait for the next repaint, which made standard scans of large drives about ten times slower.
