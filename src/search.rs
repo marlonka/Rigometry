@@ -74,6 +74,8 @@ impl Token {
 enum Kind {
     File,
     Dir,
+    /// `kind:file kind:dir`: no entry is both.
+    Neither,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -95,13 +97,14 @@ impl Query {
     /// Plain words are fuzzy; `'x` exact, `^x` prefix, `x$` suffix, `!x`
     /// exclude, `"two words"` one token. Filters: `ext:` `type:` `kind:`
     /// `size:` `path:`. A pasted absolute path (`C:\...`) is a `path:`
-    /// filter. An unknown `key:` is searched as text.
+    /// filter, as is one starting with `/` on macOS. An unknown `key:` is
+    /// searched as text. Repeated filters narrow each other.
     pub fn parse(s: &str) -> Result<Query, String> {
         let mut q = Query::default();
         for word in split_words(s) {
-            if let [d, b':', b'\\' | b'/', ..] = word.as_bytes()
-                && d.is_ascii_alphabetic()
-            {
+            let drive =
+                matches!(word.as_bytes(), [d, b':', b'\\' | b'/', ..] if d.is_ascii_alphabetic());
+            if drive || (cfg!(not(windows)) && word.len() > 1 && word.starts_with('/')) {
                 q.paths.push(normalize_path(&word));
                 continue;
             }
@@ -118,6 +121,9 @@ impl Query {
                 q.push_token(piece);
             }
         }
+        if q.positive().count() > MAX_TOKENS {
+            return Err(format!("Use at most {MAX_TOKENS} search words"));
+        }
         Ok(q)
     }
 
@@ -129,8 +135,12 @@ impl Query {
             && self.paths.is_empty()
     }
 
-    pub fn wants_dirs(&self) -> bool {
-        self.kind != Some(Kind::File) && self.exts.is_empty()
+    fn wants_dirs(&self) -> bool {
+        matches!(self.kind, None | Some(Kind::Dir)) && self.exts.is_empty()
+    }
+
+    fn wants_files(&self) -> bool {
+        matches!(self.kind, None | Some(Kind::File))
     }
 
     fn push_token(&mut self, w: &str) {
@@ -144,8 +154,11 @@ impl Query {
             (t, mode) = (r, Mode::Prefix);
         } else if let Some(r) = t.strip_suffix('$') {
             (t, mode) = (r, Mode::Suffix);
+        } else if t.contains(char::is_whitespace) {
+            // A quoted phrase is meant as written, not as scattered letters.
+            mode = Mode::Exact;
         }
-        if t.is_empty() || (!negate && self.positive().count() >= MAX_TOKENS) {
+        if t.is_empty() {
             return;
         }
         let text: Vec<char> = t.chars().map(fold).collect();
@@ -185,14 +198,23 @@ impl Query {
                 }
             }
             "kind" => {
-                self.kind = Some(match v.to_ascii_lowercase().as_str() {
+                let kind = match v.to_ascii_lowercase().as_str() {
                     "file" | "f" => Kind::File,
                     "dir" | "folder" | "d" => Kind::Dir,
                     _ => return Err(()),
-                })
+                };
+                self.kind = Some(match self.kind {
+                    Some(other) if other != kind => Kind::Neither,
+                    _ => kind,
+                });
             }
-            "size" => self.size = Some(range(v)?),
-            "path" if !v.is_empty() => self.paths.push(normalize_path(v)),
+            "size" => {
+                let (lo, hi) = range(v)?;
+                let (a, b) = self.size.unwrap_or((0, u64::MAX));
+                self.size = Some((a.max(lo), b.min(hi)));
+            }
+            "path" if v.is_empty() => return Err(()),
+            "path" => self.paths.push(normalize_path(v)),
             _ => return Ok(false),
         }
         Ok(true)
@@ -219,7 +241,7 @@ impl Query {
         let positive: Vec<&Token> = self.positive().collect();
         let negative: Vec<&Token> = self.tokens.iter().filter(|t| t.negate).collect();
         let all = (1u32 << positive.len()) - 1;
-        let wants_dirs = self.wants_dirs();
+        let (wants_dirs, wants_files) = (self.wants_dirs(), self.wants_files());
         let mut name = Name::default();
         // Folder id -> index into `folders`; OUTSIDE when not below scope
         // or excluded. Ids before the scope cannot descend from it.
@@ -244,11 +266,8 @@ impl Query {
             };
             let inherited = folders[from as usize];
             let descend = node.is_dir && !node.children.is_empty();
-            let candidate = if node.is_dir {
-                wants_dirs
-            } else {
-                self.kind != Some(Kind::Dir)
-            } && self.cheap_filters_ok(node);
+            let candidate =
+                if node.is_dir { wants_dirs } else { wants_files } && self.cheap_filters_ok(node);
             // Entries that fail a filter need no scoring unless their name
             // counts for descendants.
             if !descend && !candidate {
@@ -475,6 +494,8 @@ fn range(v: &str) -> Result<(u64, u64), ()> {
 /// Units as the rest of the app labels them: `k` `m` `g` `t` and the IEC
 /// `kib`..`tib` are binary, matching the table; SI `kb`..`tb` are decimal.
 pub(crate) fn parse_size(s: &str) -> Result<u64, ()> {
+    // German, French and Spanish write 1,5g.
+    let s = &s.replace(',', ".");
     let i = s
         .find(|c: char| !(c.is_ascii_digit() || c == '.'))
         .unwrap_or(s.len());
@@ -586,6 +607,12 @@ fn stem(name: &Name, off: usize) -> usize {
         .unwrap_or(name.raw.len())
 }
 
+/// 1 when a name's leading dot should be skipped: the name is a dotfile and
+/// the query does not type the dot itself.
+fn leading_dot(raw: &[char], q: &[char]) -> usize {
+    (raw.len() > 1 && raw[0] == '.' && q.first() != Some(&'.')) as usize
+}
+
 /// fzf-v1 style: leftmost-ending match, shrunk from the right, then scored
 /// with boundary/camel/consecutive bonuses. Whole-name, stem and prefix
 /// matches add up to `cap`.
@@ -629,8 +656,9 @@ fn fuzzy_score(name: &Name, q: &[char], cap: i32) -> Option<i32> {
         }
         score += SCORE_MATCH + if k == 0 { b * 2 } else { b };
     }
-    // A leading dot doesn't count: "gitignore" means ".gitignore".
-    let off = (raw.len() > 1 && raw[0] == '.') as usize;
+    // A leading dot doesn't count: "gitignore" means ".gitignore", and so
+    // does ".gitignore" itself.
+    let off = leading_dot(raw, q);
     let contiguous = end + 1 - start == q.len();
     let placed = if start == off && contiguous && end + 1 == raw.len() {
         100
@@ -648,7 +676,7 @@ fn fuzzy_score(name: &Name, q: &[char], cap: i32) -> Option<i32> {
 /// space-separated word in it, scored as if typed correctly minus
 /// TYPO_COST, and never placed above a prefix.
 fn typo_score(name: &Name, q: &[char]) -> Option<i32> {
-    let off = (name.raw.len() > 1 && name.raw[0] == '.') as usize;
+    let off = leading_dot(&name.raw, q);
     let mut best = typo_at(name, off, q);
     if name.mask & char_bit(' ') != 0 {
         for (i, _) in name.raw.iter().enumerate().filter(|(_, c)| **c == ' ') {
@@ -892,6 +920,59 @@ mod tests {
         }
         assert!(Query::parse("   ").unwrap().is_empty());
         assert!(!Query::parse("unknown:value").unwrap().is_empty());
+        assert!(
+            Query::parse("path:").is_err(),
+            "an empty filter is an error, not text"
+        );
+        assert!(
+            Query::parse("a b c d e f g h zzz").is_err(),
+            "no word is dropped silently"
+        );
+    }
+
+    #[test]
+    fn repeated_filters_narrow_and_phrases_stay_contiguous() {
+        let nodes = fixture();
+        assert_eq!(
+            names(&nodes, "size:>1k size:<5k", 0),
+            ["main.rs", "domain.rs"]
+        );
+        assert!(names(&nodes, "kind:file kind:dir", 0).is_empty());
+        assert_eq!(names(&nodes, "size:1,5k..5kb", 0), ["main.rs", "domain.rs"]);
+        let nodes = tree(&[
+            (None, r"C:\scan", true, 0),
+            (Some(0), "holiday main cut.mp4", false, 1),
+            (Some(0), "domain recut.mp4", false, 1),
+        ]);
+        assert_eq!(
+            names(&nodes, "\"main cut\"", 0),
+            ["holiday main cut.mp4"],
+            "a quoted phrase does not match scattered letters"
+        );
+    }
+
+    #[test]
+    fn typing_a_dotfile_with_its_dot_still_ranks_it_first() {
+        assert!(score(".gitignore", ".gitignore") > score("foo.gitignore", ".gitignore"));
+        assert!(score(".gitignore", ".gitignore") >= score(".gitignore", "gitignore"));
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn a_pasted_unix_path_filters_by_path() {
+        let nodes = tree(&[
+            (None, "/scan", true, 0),
+            (Some(0), "Projects", true, 0),
+            (Some(1), "main.rs", false, 2_000),
+            (Some(0), "main.rs", false, 50),
+        ]);
+        let masks = NameMasks::default()
+            .update(&std::sync::Arc::new(nodes.clone()), 0)
+            .to_vec();
+        let hits = Query::parse("/scan/Projects/main")
+            .unwrap()
+            .search(&nodes, &masks, 0);
+        assert_eq!(hits.iter().map(|h| h.id).collect::<Vec<_>>(), [2]);
     }
 
     #[test]

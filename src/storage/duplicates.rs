@@ -944,12 +944,7 @@ mod platform {
         if filtered {
             let followed = native::open_contents(path, false, sequential)?;
             // The followed handle must reach the very file just checked.
-            if facts.identity.is_none()
-                || super::super::native::facts(HANDLE(followed.as_raw_handle()))
-                    .map_err(native::io_error)?
-                    .identity
-                    != facts.identity
-            {
+            if facts.identity.is_none() || self::facts(&followed)?.identity != facts.identity {
                 return Err(Failure::Changed);
             }
             file = followed;
@@ -967,22 +962,24 @@ mod platform {
         })
     }
 
-    fn wide(text: &[u16]) -> Vec<u16> {
-        let end = text.iter().position(|&c| c == 0).unwrap_or(text.len());
-        let mut out = text[..end].to_vec();
-        out.push(0);
-        out
+    /// A NUL-terminated copy of the string an API wrote into `buffer`.
+    fn terminated(buffer: &[u16]) -> Vec<u16> {
+        let end = buffer.iter().position(|&c| c == 0).unwrap_or(buffer.len());
+        buffer[..end].iter().copied().chain([0]).collect()
     }
 
     /// The kind of drive behind `path`, and a note when its filesystem can
     /// share blocks between files.
     pub(super) fn volume(path: &Path) -> (Medium, Option<&'static str>) {
-        let name = native::wide(path);
+        use std::os::windows::ffi::OsStrExt;
+        // Plain DOS and UNC syntax: the volume functions expect roots like
+        // `C:\` and `\\server\share\`, not their `\\?\` forms.
+        let name: Vec<u16> = path.as_os_str().encode_wide().chain([0]).collect();
         let mut root = [0u16; 1024];
         if unsafe { GetVolumePathNameW(PCWSTR(name.as_ptr()), &mut root) }.is_err() {
             return (Medium::Unknown, None);
         }
-        let root = wide(&root);
+        let root = terminated(&root);
         let mut file_system = [0u16; 64];
         let refs = unsafe {
             GetVolumeInformationW(
@@ -995,7 +992,7 @@ mod platform {
             )
         }
         .is_ok()
-            && String::from_utf16_lossy(&wide(&file_system)).trim_end_matches('\0') == "ReFS";
+            && terminated(&file_system).starts_with(&"ReFS\0".encode_utf16().collect::<Vec<_>>());
         let sharing = refs.then_some(
             "ReFS can share blocks between copies (block cloning); deleting a copy can free less than shown.",
         );
@@ -1015,7 +1012,7 @@ mod platform {
         let mut volume = [0u16; 64];
         unsafe { GetVolumeNameForVolumeMountPointW(PCWSTR(root.as_ptr()), &mut volume) }.ok()?;
         // `\\?\Volume{…}\` names the root folder; without the backslash, the volume.
-        let mut device = wide(&volume);
+        let mut device = terminated(&volume);
         device.pop();
         if device.last() == Some(&u16::from(b'\\')) {
             device.pop();
@@ -1055,13 +1052,12 @@ mod platform {
             )
         }
         .ok()?;
-        (returned as usize >= size_of::<DEVICE_SEEK_PENALTY_DESCRIPTOR>()).then_some(
-            if descriptor.IncursSeekPenalty {
-                Medium::Rotational
-            } else {
-                Medium::SolidState
-            },
-        )
+        let answered = std::mem::offset_of!(DEVICE_SEEK_PENALTY_DESCRIPTOR, IncursSeekPenalty) + 1;
+        (returned as usize >= answered).then_some(if descriptor.IncursSeekPenalty {
+            Medium::Rotational
+        } else {
+            Medium::SolidState
+        })
     }
 }
 

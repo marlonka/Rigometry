@@ -38,7 +38,6 @@ pub struct Settings {
     pub theme: String,
     pub language: crate::i18n::Language,
     pub scale: f32,
-    #[serde(default)]
     pub scale_revision: u8,
     pub path: String,
     pub reduce_motion: bool,
@@ -156,7 +155,7 @@ pub enum Sort {
     /// as detail only; for most files the two are identical.
     Allocated,
     Files,
-    /// Search score, then logical size. Only active while searching.
+    /// Search score, then name. Only active while searching.
     Relevance,
 }
 
@@ -334,6 +333,8 @@ impl State {
                     self.summary = Some(summary);
                     self.scan = None;
                     self.dirty = true;
+                    // Sizes stop changing: lay the map out once more.
+                    self.map_revision = self.map_revision.wrapping_add(1);
                     break;
                 }
                 None => break,
@@ -346,6 +347,9 @@ impl State {
                 || self.last_index.elapsed() > Duration::from_millis(400))
         {
             self.rebuild_visible();
+            // From the end: a rebuild slower than the interval must not
+            // run again on every frame of a scan.
+            self.last_index = Instant::now();
         }
         if let Some(result) = self.task.as_ref().and_then(|r| match r.try_recv() {
             Ok(result) => Some(result),
@@ -545,6 +549,9 @@ impl State {
                 || found.last_index.elapsed() > Duration::from_millis(400))
         {
             self.rebuild_duplicates();
+            if let Some(found) = &mut self.duplicates {
+                found.last_index = Instant::now();
+            }
         }
     }
 
@@ -554,7 +561,6 @@ impl State {
             return;
         };
         found.dirty = false;
-        found.last_index = Instant::now();
         let groups = &found.groups;
         // An invalid search shows its error and no groups, as the table does.
         let Ok(query) = crate::search::Query::parse(&self.filter) else {
@@ -658,7 +664,8 @@ impl State {
     /// Searching ranks by relevance until a column is chosen; clearing the
     /// search restores the sort that was active before it.
     pub fn filter_changed(&mut self) {
-        let searching = !self.filter.trim().is_empty();
+        // A lone `!` or `^` searches for nothing yet and keeps the sort.
+        let searching = !crate::search::Query::parse(&self.filter).is_ok_and(|q| q.is_empty());
         if searching && self.sort_before_search.is_none() {
             self.sort_before_search = Some((self.sort, self.descending));
             self.sort = Sort::Relevance;
@@ -681,7 +688,6 @@ impl State {
     }
     pub fn rebuild_visible(&mut self) {
         self.visible.clear();
-        self.last_index = Instant::now();
         self.dirty = false;
         self.urgent = false;
         self.visible_filter.clone_from(&self.filter);
@@ -690,15 +696,19 @@ impl State {
             self.map_revision = self.map_revision.wrapping_add(1);
             return;
         }
-        self.map_ids = self.nodes[self.scope]
+        let mut map_ids: Vec<usize> = self.nodes[self.scope]
             .children
             .iter()
             .copied()
             .filter(|id| self.nodes[*id].allocated > 0)
             .collect();
-        self.map_ids
-            .sort_unstable_by_key(|id| std::cmp::Reverse(self.nodes[*id].allocated));
-        self.map_revision += 1;
+        map_ids.sort_unstable_by_key(|id| std::cmp::Reverse(self.nodes[*id].allocated));
+        // Typing, sorting and expanding keep the map's layout; only new
+        // tiles or sizes lay it out again.
+        if map_ids != self.map_ids || self.scan.is_some() {
+            self.map_ids = map_ids;
+            self.map_revision = self.map_revision.wrapping_add(1);
+        }
         let query = match crate::search::Query::parse(&self.filter) {
             Ok(query) => {
                 self.search_error = None;
@@ -713,7 +723,7 @@ impl State {
             let a = &self.nodes[*a];
             let b = &self.nodes[*b];
             let order = match self.sort {
-                Sort::Name => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
+                Sort::Name => name_order(&a.name, &b.name),
                 Sort::Allocated | Sort::Relevance => a.allocated.cmp(&b.allocated),
                 Sort::Files => a.files.cmp(&b.files),
             };
@@ -735,10 +745,9 @@ impl State {
                 // Ties go by name, not size: sizes grow while a scan runs, and
                 // rows must not reshuffle under the pointer.
                 hits.sort_by(|a, b| {
-                    b.score.cmp(&a.score).then_with(|| {
-                        let (a, b) = (&self.nodes[a.id], &self.nodes[b.id]);
-                        a.name.to_lowercase().cmp(&b.name.to_lowercase())
-                    })
+                    b.score
+                        .cmp(&a.score)
+                        .then_with(|| name_order(&self.nodes[a.id].name, &self.nodes[b.id].name))
                 });
             } else {
                 hits.sort_by(|a, b| compare(&a.id, &b.id));
@@ -760,10 +769,25 @@ impl State {
     }
 }
 
+/// Case-insensitive name order without allocating: sorting millions of
+/// entries by name must not build two lowercase strings per comparison.
+fn name_order(a: &str, b: &str) -> std::cmp::Ordering {
+    if a.is_ascii() && b.is_ascii() {
+        a.bytes()
+            .map(|c| c.to_ascii_lowercase())
+            .cmp(b.bytes().map(|c| c.to_ascii_lowercase()))
+    } else {
+        a.chars()
+            .flat_map(char::to_lowercase)
+            .cmp(b.chars().flat_map(char::to_lowercase))
+    }
+}
+
 pub fn append_batch(nodes: &mut Vec<ScanNode>, batch: Vec<ScanNode>) {
     for mut node in batch {
-        // A scan owns one receiver, so late batches from replaced scans cannot enter this tree.
-        if node.id != nodes.len() {
+        // A scan owns one receiver, so late batches from replaced scans cannot
+        // enter this tree; a parent always precedes its children.
+        if node.id != nodes.len() || node.parent.is_some_and(|p| p >= node.id) {
             continue;
         }
         let (logical, allocated, files, incomplete) =
@@ -795,9 +819,10 @@ pub fn append_batch(nodes: &mut Vec<ScanNode>, batch: Vec<ScanNode>) {
     }
 }
 pub fn finalize_scan(nodes: &mut [ScanNode], summary: &mut ScanSummary) {
+    // The root's totals include every descendant's, so any overflow reaches it.
     if nodes
-        .iter()
-        .any(|node| node.note.contains(AGGREGATE_OVERFLOW))
+        .first()
+        .is_some_and(|root| root.note.contains(AGGREGATE_OVERFLOW))
         && !summary.notes.iter().any(|note| note == AGGREGATE_OVERFLOW)
     {
         summary.errors = summary.errors.saturating_add(1);

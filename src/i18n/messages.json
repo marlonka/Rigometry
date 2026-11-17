@@ -194,5 +194,6 @@
   ["unknown drive type", "unbekannter Laufwerkstyp", "type de lecteur inconnu", "tipo de unidad desconocido"],
   ["Cancel current scan or comparison", "Laufende Analyse oder laufenden Vergleich abbrechen", "Annuler l’analyse ou la comparaison en cours", "Cancelar el análisis o la comparación en curso"],
   ["Export duplicates", "Duplikate exportieren", "Exporter les doublons", "Exportar duplicados"],
-  ["⌘", "⌘", "⌘", "⌘"]
+  ["⌘", "⌘", "⌘", "⌘"],
+  ["Use at most {0} search words", "Höchstens {0} Suchbegriffe verwenden", "Utilisez au plus {0} mots de recherche", "Usa como máximo {0} palabras de búsqueda"]
 ]
