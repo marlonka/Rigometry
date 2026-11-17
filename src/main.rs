@@ -99,7 +99,7 @@ fn validate_arguments(args: &[String]) -> Result<(), String> {
         let outputs: Vec<_> = ["--report", "--export", "--duplicates"]
             .into_iter()
             .filter_map(|flag| argument(args, flag))
-            .map(|path| std::path::absolute(&path).unwrap_or_else(|_| path.into()))
+            .map(|path| output_key(&path))
             .collect();
         if (1..outputs.len()).any(|i| outputs[..i].contains(&outputs[i])) {
             return Err("Each output needs its own file name".into());
@@ -111,6 +111,28 @@ fn validate_arguments(args: &[String]) -> Result<(), String> {
         return Err("--report, --export and --duplicates require --headless".into());
     }
     Ok(())
+}
+
+/// An output path as the filesystem tells files apart: absolute, with `.` and
+/// `..` resolved, and case-insensitive on Windows and macOS.
+fn output_key(path: &str) -> PathBuf {
+    use std::path::Component;
+    let absolute = std::path::absolute(path).unwrap_or_else(|_| path.into());
+    let mut key = PathBuf::new();
+    for component in absolute.components() {
+        match component {
+            Component::ParentDir => {
+                key.pop();
+            }
+            Component::CurDir => {}
+            other => key.push(other),
+        }
+    }
+    if cfg!(any(windows, target_os = "macos")) {
+        key.to_string_lossy().to_lowercase().into()
+    } else {
+        key
+    }
 }
 
 fn requested_window_size(args: &[String]) -> Option<eframe::egui::Vec2> {
@@ -318,7 +340,7 @@ fn headless(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         if is_csv(&target) {
             storage::duplicates::export_csv(&target, &nodes, &groups, &summary)?;
         } else {
-            storage::duplicates::export_json(&target, &nodes, &groups, &summary)?;
+            storage::duplicates::export_json(&target, &nodes, &groups, &summary, None)?;
         }
     }
     Ok(())
@@ -389,6 +411,15 @@ mod cli_tests {
                 "f",
                 "--export",
                 "same.json",
+            ],
+            vec![
+                "--headless",
+                "--report",
+                "out/../a.json",
+                "--scan",
+                "f",
+                "--export",
+                "a.json",
             ],
             vec!["--theme", "typo"],
             vec!["--version", "--scan", "folder"],

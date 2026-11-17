@@ -157,7 +157,10 @@ fn hard_links_are_one_file_and_free_nothing() {
     assert_eq!(linked.freeable, 0);
     let copy = groups[0].copies.iter().find(|c| c.links == 1).unwrap();
     assert!(copy.freeable > 0);
-    assert_eq!(groups[0].reclaimable, 0, "keeping the copy frees nothing");
+    assert_eq!(
+        groups[0].reclaimable, copy.freeable,
+        "keeping the linked file and deleting the copy frees the copy"
+    );
     assert_eq!(summary.hard_links, 1);
 }
 
@@ -229,7 +232,7 @@ fn exports_list_every_copy_and_never_overwrite() {
     let nodes = scan(&root);
     let (groups, summary) = run(&nodes, 1);
     let json = fixture.path().join("duplicates.json");
-    export_json(&json, &nodes, &groups, &summary).unwrap();
+    export_json(&json, &nodes, &groups, &summary, None).unwrap();
     let report: serde_json::Value = serde_json::from_slice(&fs::read(&json).unwrap()).unwrap();
     assert_eq!(report["kind"], "duplicates");
     assert_eq!(report["status"], "complete");
@@ -311,4 +314,26 @@ fn only_errors_inside_a_folder_make_its_scan_partial() {
         ..Default::default()
     };
     assert!(crate::storage::subtree_partial(&nodes, &stopped, 2));
+}
+
+#[test]
+fn copies_are_compared_by_main_stream_when_the_scan_counted_named_streams() {
+    let fixture = tempfile::tempdir().unwrap();
+    let root = fixture.path();
+    let data = bytes(14, 50_000);
+    write(root.join("a/setup.exe"), &data);
+    write(root.join("b/setup.exe"), &data);
+    let mut nodes = Arc::unwrap_or_clone(scan(root));
+    // An administrator scan on Windows adds each file's named streams, such
+    // as a Zone.Identifier of its own length, to the size it reports.
+    for (extra, name) in [(26, "a"), (87, "b")] {
+        let folder = nodes.iter().position(|n| n.name == name).unwrap();
+        let file = nodes[folder].children[0];
+        nodes[file].logical += extra;
+        nodes[file].note = format!("Includes 1 {}", crate::storage::NAMED_STREAMS);
+    }
+    let (groups, summary) = run(&Arc::new(nodes), 1);
+    assert_eq!(groups.len(), 1, "{:?}", summary.notes);
+    assert_eq!(groups[0].size, 50_000);
+    assert_eq!(summary.changed, 0);
 }

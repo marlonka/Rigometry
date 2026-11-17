@@ -89,7 +89,8 @@ After a scan, open **Duplicates** on the Storage page, choose the **Smallest fil
 - **Copies have identical contents.** Only files of equal size are read. Rigometry first hashes the first and last 16 KiB of each, then reads in full only the files that still match another, and compares them by [BLAKE3](https://github.com/BLAKE3-team/BLAKE3) hash. Equal hashes mean equal contents; names, dates and folders play no part.
 - **The biggest savings come first.** Groups appear as they are confirmed, sorted by the space keeping one copy would free. The oldest copy, likely the original, is listed first; hover a copy for its full path.
 - **Hard links are not copies.** Further names of one file are counted once and free nothing. On a Mac, clones that share storage on APFS count only their unshared part.
-- **Use the search to narrow the list.** `ext:jpg` shows only groups with a JPEG copy; the other filters work as described above.
+- **Use the search to narrow the list.** `ext:jpg` shows only groups with a JPEG copy; the other filters work as described above. The totals and the export follow the narrowed list; a JSON export records the search.
+- **Contents means the file's data.** Windows download markers and other named streams, and resource forks on a Mac, are not compared.
 - **Changed files are left out.** A file that changed, moved or became a link since the scan, or while it was read, is not reported and is counted under **Comparison details**. So are files that could not be read.
 - **Cloud files stay in the cloud.** Files stored only in OneDrive or iCloud are skipped and never downloaded. On a Mac, comparing does not change files' access times.
 - **Export the result** as CSV or JSON: each copy with its path, size, BLAKE3 hash and modification time.

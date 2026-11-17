@@ -303,7 +303,7 @@ pub(super) fn read_entry(path: &Path, metadata: &fs::Metadata) -> EntryInfo {
             if named > 0 {
                 append_note(
                     &mut result.note,
-                    &format!("Includes {named} named data stream(s)"),
+                    &format!("Includes {named} {}", super::NAMED_STREAMS),
                 );
             }
             // For sparse/compressed streams the reserved allocation may exceed

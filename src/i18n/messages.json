@@ -193,5 +193,6 @@
   ["Cancel current scan or comparison", "Laufende Analyse oder laufenden Vergleich abbrechen", "Annuler l’analyse ou la comparaison en cours", "Cancelar el análisis o la comparación en curso"],
   ["Export duplicates", "Duplikate exportieren", "Exporter les doublons", "Exportar duplicados"],
   ["⌘", "⌘", "⌘", "⌘"],
-  ["Use at most {0} search words", "Höchstens {0} Suchbegriffe verwenden", "Utilisez au plus {0} mots de recherche", "Usa como máximo {0} palabras de búsqueda"]
+  ["Use at most {0} search words", "Höchstens {0} Suchbegriffe verwenden", "Utilisez au plus {0} mots de recherche", "Usa como máximo {0} palabras de búsqueda"],
+  ["No sets of copies match the search", "Keine Gruppe von Kopien passt zur Suche", "Aucun groupe de copies ne correspond à la recherche", "Ningún grupo de copias coincide con la búsqueda"]
 ]

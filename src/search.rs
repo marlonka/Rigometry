@@ -490,8 +490,15 @@ fn range(v: &str) -> Result<(u64, u64), ()> {
 /// Units as the rest of the app labels them: `k` `m` `g` `t` and the IEC
 /// `kib`..`tib` are binary, matching the table; SI `kb`..`tb` are decimal.
 pub(crate) fn parse_size(s: &str) -> Result<u64, ()> {
-    // German, French and Spanish write 1,5g.
-    let s = &s.replace(',', ".");
+    // German, French and Spanish write 1,5g. A comma before exactly three
+    // digits reads as a thousands separator in English, so it is refused.
+    if let Some((_, decimals)) = s.split_once(',') {
+        let digits = decimals.chars().take_while(char::is_ascii_digit).count();
+        if digits == 3 {
+            return Err(());
+        }
+    }
+    let s = &s.replacen(',', ".", 1);
     let i = s
         .find(|c: char| !(c.is_ascii_digit() || c == '.'))
         .unwrap_or(s.len());
@@ -939,6 +946,9 @@ mod tests {
         );
         assert!(names(&nodes, "kind:file kind:dir", 0).is_empty());
         assert_eq!(names(&nodes, "size:1,5k..5kb", 0), ["main.rs", "domain.rs"]);
+        for ambiguous in ["size:>1,000", "size:1,000,000"] {
+            assert!(Query::parse(ambiguous).is_err(), "{ambiguous}");
+        }
         let nodes = tree(&[
             (None, r"C:\scan", true, 0),
             (Some(0), "holiday main cut.mp4", false, 1),

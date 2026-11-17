@@ -19,7 +19,7 @@ use super::{
 use crossbeam_channel::{Receiver, RecvTimeoutError, Sender, bounded};
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::HashMap,
+    collections::HashSet,
     fs::File,
     io::{self, BufWriter, Read, Seek, SeekFrom, Write},
     path::Path,
@@ -45,10 +45,11 @@ pub struct DuplicateGroup {
     /// Logical size of each copy in bytes.
     pub size: u64,
     pub blake3: String,
-    pub copies: Vec<Copy>,
+    pub copies: Vec<Member>,
     /// Bytes on disk that keeping only one copy would free: the sum of what
-    /// deleting each copy frees, less the largest. An upper bound where a
-    /// filesystem shares blocks between copies (ReFS block cloning).
+    /// deleting each copy frees, less the least of them, as when the copy
+    /// that frees least is kept. An upper bound where a filesystem shares
+    /// blocks between copies (ReFS block cloning).
     pub reclaimable: u64,
 }
 
@@ -63,8 +64,9 @@ impl DuplicateGroup {
     }
 }
 
+/// One copy in a group.
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct Copy {
+pub struct Member {
     pub id: usize,
     /// Last write time in milliseconds since 1970, when the filesystem reports one.
     pub modified_ms: Option<i64>,
@@ -210,18 +212,21 @@ pub fn find(
 }
 
 /// A file that shares its size with at least one other file.
+#[derive(Clone, Copy)]
 struct Candidate {
     id: usize,
+    /// The size the scan measured. Its main data stream is read: on Windows
+    /// that is this size, on a Mac this size less any resource fork.
     size: u64,
     /// The scan's bytes on disk for this path; zero for a hard-link alias.
     allocated: u64,
-    file: Option<Known>,
 }
 
 /// What the first read established about a candidate.
 #[derive(Clone, Copy)]
 struct Known {
     identity: Option<FileIdentity>,
+    /// `stamp.size` is the length of the data that is compared.
     stamp: Stamp,
     links: u64,
     modified_ms: Option<i64>,
@@ -244,9 +249,10 @@ struct Opened {
 }
 
 enum Failure {
-    /// The file is no longer the scanned one, changed or vanished.
+    /// The file is no longer the scanned one: changed, gone, or replaced by
+    /// a link or a special file.
     Changed,
-    /// A link, cloud placeholder or special file: not compared, not an error.
+    /// A cloud placeholder: not compared and not an error.
     Skipped,
     Io(io::Error),
     Cancelled,
@@ -265,6 +271,9 @@ impl From<io::Error> for Failure {
 
 /// Jobs for one stage of reads: candidate index and, for full reads, the group.
 type Job = (usize, usize);
+type Hashed = Result<(Known, [u8; 32]), Failure>;
+/// One read of a candidate at `path`, given what an earlier read established.
+type Work = fn(&Path, &Candidate, Option<&Known>, &mut [u8], &AtomicU64, &AtomicBool) -> Hashed;
 
 struct Finder<'a> {
     nodes: &'a [ScanNode],
@@ -284,9 +293,7 @@ impl Finder<'_> {
 
     fn run(&mut self, root: usize) {
         let started = Instant::now();
-        let nodes = self.nodes;
-        let root_path = node_path(nodes, root);
-        let (medium, sharing) = platform::volume(&root_path);
+        let (medium, sharing) = platform::volume(&node_path(self.nodes, root));
         self.summary.medium = medium.label().into();
         if self.summary.scan_incomplete {
             self.summary.notes.push(
@@ -298,83 +305,62 @@ impl Finder<'_> {
             self.summary.notes.push(note.into());
         }
         let (sample_threads, content_threads) = medium.threads();
-        let mut candidates = self.collect(root);
-        let sizes = size_groups(&candidates);
-        let mut jobs: Vec<Job> = sizes
-            .iter()
-            .flat_map(|r| r.clone())
-            .map(|i| (i, 0))
-            .collect();
+        let candidates = self.collect(root);
+        let mut jobs: Vec<Job> = (0..candidates.len()).map(|i| (i, 0)).collect();
         if medium == Medium::Rotational {
             // Scan order approximates disk order, which a single head favors.
             jobs.sort_unstable_by_key(|&(i, _)| candidates[i].id);
         }
-        let mut samples = vec![None; candidates.len()];
-        let mut known = vec![None; candidates.len()];
+        let mut known: Vec<Option<Known>> = vec![None; candidates.len()];
+        let mut hashes: Vec<Option<[u8; 32]>> = vec![None; candidates.len()];
         self.stage(
             Stage::Sampling,
             &jobs,
             &candidates,
+            &[],
             sample_threads,
-            |candidate, buffer, bytes, cancel| {
-                sample(
-                    &node_path(nodes, candidate.id),
-                    candidate,
-                    buffer,
-                    bytes,
-                    cancel,
-                )
-            },
+            sample,
             |finder, (index, _), outcome| {
-                if let Some((file, hash)) = finder.accept(&candidates[index], outcome) {
-                    samples[index] = Some(hash);
+                if let Some((file, hash)) = finder.accept(candidates[index].id, outcome) {
                     known[index] = Some(file);
+                    hashes[index] = Some(hash);
                 }
             },
         );
-        for (candidate, file) in candidates.iter_mut().zip(known) {
-            candidate.file = file;
-        }
         if self.cancelled() {
             return self.finish(started);
         }
-        // Split each size by sample; files up to 32 KiB are now fully compared.
+        // Split each size by sample, which includes the compared length;
+        // files up to 32 KiB are now fully compared.
         let mut full: Vec<Vec<usize>> = Vec::new();
-        for range in sizes {
-            let members = self.distinct_files(&candidates, range);
-            for group in split(&members, |&i| samples[i]) {
-                if candidates[group[0]].size <= 2 * SAMPLE {
-                    let hash = samples[group[0]].expect("sampled");
-                    self.emit(&candidates, &group, hash);
+        for range in size_groups(&candidates) {
+            let members = self.distinct_files(&known, range);
+            for group in split(&members, |&i| hashes[i]) {
+                let first = known[group[0]].expect("read");
+                if first.stamp.size <= 2 * SAMPLE {
+                    let hash = hashes[group[0]].expect("hashed");
+                    self.emit(&candidates, &known, &group, hash);
                 } else {
                     full.push(group);
                 }
             }
         }
-        drop(samples);
         let jobs: Vec<Job> = full
             .iter()
             .enumerate()
             .flat_map(|(g, members)| members.iter().map(move |&i| (i, g)))
             .collect();
-        let mut hashes: Vec<Option<[u8; 32]>> = vec![None; candidates.len()];
+        hashes.fill(None);
         let mut remaining: Vec<usize> = full.iter().map(Vec::len).collect();
         self.stage(
             Stage::Contents,
             &jobs,
             &candidates,
+            &known,
             content_threads,
-            |candidate, buffer, bytes, cancel| {
-                contents(
-                    &node_path(nodes, candidate.id),
-                    candidate,
-                    buffer,
-                    bytes,
-                    cancel,
-                )
-            },
+            contents,
             |finder, (index, group), outcome| {
-                if let Some((_, hash)) = finder.accept(&candidates[index], outcome) {
+                if let Some((_, hash)) = finder.accept(candidates[index].id, outcome) {
                     hashes[index] = Some(hash);
                 }
                 remaining[group] -= 1;
@@ -383,7 +369,7 @@ impl Finder<'_> {
                 if remaining[group] == 0 {
                     for same in split(&full[group], |&i| hashes[i]) {
                         let hash = hashes[same[0]].expect("hashed");
-                        finder.emit(&candidates, &same, hash);
+                        finder.emit(&candidates, &known, &same, hash);
                     }
                 }
             },
@@ -391,8 +377,8 @@ impl Finder<'_> {
         self.finish(started);
     }
 
-    /// Files below `root` at or above the minimum size whose size is shared,
-    /// sorted by descending size so the largest groups are read first.
+    /// Files below `root` at or above the minimum size that share their size
+    /// with another, largest first so the largest groups are read first.
     fn collect(&mut self, root: usize) -> Vec<Candidate> {
         let mut files = Vec::new();
         let mut stack = vec![root];
@@ -402,34 +388,49 @@ impl Finder<'_> {
             };
             if node.is_dir {
                 stack.extend(node.children.iter().copied());
-            } else if node.incomplete {
+                continue;
+            }
+            if node.incomplete {
                 self.summary.unknown_size += 1;
-            } else if node.logical < self.summary.min_size {
+                continue;
+            }
+            // An administrator scan adds named streams to the size; copies
+            // are compared by their main stream, whose length is asked for.
+            let size = if node.note.contains(super::NAMED_STREAMS) {
+                match std::fs::symlink_metadata(node_path(self.nodes, id)) {
+                    Ok(metadata) => metadata.len(),
+                    Err(_) => {
+                        self.summary.changed += 1;
+                        continue;
+                    }
+                }
+            } else {
+                node.logical
+            };
+            if size < self.summary.min_size {
                 self.summary.below_minimum += 1;
-                self.summary.below_minimum_bytes = self
-                    .summary
-                    .below_minimum_bytes
-                    .saturating_add(node.logical);
+                self.summary.below_minimum_bytes =
+                    self.summary.below_minimum_bytes.saturating_add(size);
             } else {
                 files.push(Candidate {
                     id,
-                    size: node.logical,
+                    size,
                     allocated: node.allocated,
-                    file: None,
                 });
             }
         }
         self.summary.files = files.len() as u64;
         files.sort_unstable_by_key(|c| (std::cmp::Reverse(c.size), c.id));
-        files
+        // Only files with company are kept: memory follows candidates, not files.
+        let shared: Vec<Candidate> = size_groups(&files)
+            .into_iter()
+            .flat_map(|range| files[range].iter().copied())
+            .collect();
+        shared
     }
 
     /// Records a read's outcome; returns what it established when it succeeded.
-    fn accept(
-        &mut self,
-        candidate: &Candidate,
-        outcome: Result<(Known, [u8; 32]), Failure>,
-    ) -> Option<(Known, [u8; 32])> {
+    fn accept(&mut self, id: usize, outcome: Hashed) -> Option<(Known, [u8; 32])> {
         match outcome {
             Ok(result) => return Some(result),
             Err(Failure::Changed) => self.summary.changed += 1,
@@ -443,7 +444,7 @@ impl Finder<'_> {
                     None => {}
                 }
                 if self.summary.notes.len() < MAX_DIAGNOSTICS {
-                    let path = node_path(self.nodes, candidate.id);
+                    let path = node_path(self.nodes, id);
                     self.summary
                         .notes
                         .push(format!("{}: {error}", path.display()));
@@ -453,21 +454,21 @@ impl Finder<'_> {
         None
     }
 
-    /// The sampled members of one size, one path per file: further paths of
+    /// The read members of one size, one path per file: further paths of
     /// the same file are hard links, not copies, and free nothing.
     fn distinct_files(
         &mut self,
-        candidates: &[Candidate],
+        known: &[Option<Known>],
         range: std::ops::Range<usize>,
     ) -> Vec<usize> {
-        let mut seen = HashMap::new();
+        let mut seen = HashSet::new();
         let mut members = Vec::new();
         for index in range {
-            let Some(known) = &candidates[index].file else {
+            let Some(file) = &known[index] else {
                 continue;
             };
-            if let Some(identity) = known.identity
-                && seen.insert(identity, index).is_some()
+            if let Some(identity) = file.identity
+                && !seen.insert(identity)
             {
                 self.summary.hard_links += 1;
                 continue;
@@ -477,32 +478,38 @@ impl Finder<'_> {
         members
     }
 
-    fn emit(&mut self, candidates: &[Candidate], members: &[usize], hash: [u8; 32]) {
-        let mut copies: Vec<Copy> = members
+    fn emit(
+        &mut self,
+        candidates: &[Candidate],
+        known: &[Option<Known>],
+        members: &[usize],
+        hash: [u8; 32],
+    ) {
+        let mut copies: Vec<Member> = members
             .iter()
             .map(|&i| {
-                let candidate = &candidates[i];
-                let known = candidate.file.expect("read before grouping");
-                Copy {
-                    id: candidate.id,
-                    modified_ms: known.modified_ms,
-                    freeable: if known.links > 1 {
+                let file = known[i].expect("read before grouping");
+                Member {
+                    id: candidates[i].id,
+                    modified_ms: file.modified_ms,
+                    freeable: if file.links > 1 {
                         0
                     } else {
-                        known.private.unwrap_or(candidate.allocated)
+                        file.private.unwrap_or(candidates[i].allocated)
                     },
-                    links: known.links,
+                    links: file.links,
                 }
             })
             .collect();
         // The oldest copy is most likely the original.
         copies.sort_by_key(|c| (c.modified_ms.is_none(), c.modified_ms, c.id));
+        // Keeping the copy whose deletion frees least frees the most.
         let total: u64 = copies.iter().map(|c| c.freeable).sum();
-        let largest = copies.iter().map(|c| c.freeable).max().unwrap_or(0);
+        let least = copies.iter().map(|c| c.freeable).min().unwrap_or(0);
         let group = DuplicateGroup {
-            size: candidates[members[0]].size,
-            blake3: hex(&hash),
-            reclaimable: total - largest,
+            size: known[members[0]].expect("read").stamp.size,
+            blake3: blake3::Hash::from_bytes(hash).to_hex().to_string(),
+            reclaimable: total - least,
             copies,
         };
         self.summary.groups += 1;
@@ -574,18 +581,19 @@ impl Finder<'_> {
 
     /// Reads `jobs` on `threads` threads and hands each outcome to `each` on
     /// this thread, in completion order, reporting progress meanwhile.
-    fn stage<W, E>(
+    /// `previous` holds what an earlier stage established, by candidate.
+    #[allow(clippy::too_many_arguments)]
+    fn stage<E>(
         &mut self,
         stage: Stage,
         jobs: &[Job],
         candidates: &[Candidate],
+        previous: &[Option<Known>],
         threads: usize,
-        work: W,
+        work: Work,
         mut each: E,
     ) where
-        W: Fn(&Candidate, &mut [u8], &AtomicU64, &AtomicBool) -> Result<(Known, [u8; 32]), Failure>
-            + Sync,
-        E: FnMut(&mut Self, Job, Result<(Known, [u8; 32]), Failure>),
+        E: FnMut(&mut Self, Job, Hashed),
     {
         if jobs.is_empty() {
             return;
@@ -597,22 +605,35 @@ impl Finder<'_> {
                 Stage::Contents => candidates[i].size,
             })
             .fold(0u64, u64::saturating_add);
+        let nodes = self.nodes;
         let bytes = AtomicU64::new(0);
         let next = AtomicUsize::new(0);
         let cancel = self.cancel.clone();
-        let (results, received) = bounded(threads.max(1) * 4);
+        let read = |&(index, _): &Job, buffer: &mut [u8]| {
+            let candidate = &candidates[index];
+            let before = previous.get(index).and_then(Option::as_ref);
+            work(
+                &node_path(nodes, candidate.id),
+                candidate,
+                before,
+                buffer,
+                &bytes,
+                &cancel,
+            )
+        };
         let mut files_done = 0;
         std::thread::scope(|scope| {
+            // Created inside the scope: if handling a result panics, dropping
+            // the receiver releases readers blocked on a full channel.
+            let (results, received) = bounded(threads.max(1) * 4);
             let reader = |results: Sender<_>| {
                 platform::prepare_reader_thread();
                 let mut buffer = vec![0; CHUNK];
                 while !cancel.load(Ordering::Relaxed) {
-                    let index = next.fetch_add(1, Ordering::Relaxed);
-                    let Some(&job) = jobs.get(index) else {
+                    let Some(&job) = jobs.get(next.fetch_add(1, Ordering::Relaxed)) else {
                         break;
                     };
-                    let outcome = work(&candidates[job.0], &mut buffer, &bytes, &cancel);
-                    if results.send((job, outcome)).is_err() {
+                    if results.send((job, read(&job, &mut buffer))).is_err() {
                         break;
                     }
                 }
@@ -629,14 +650,16 @@ impl Finder<'_> {
             // Only the readers hold senders now: the loop below ends with them.
             drop(results);
             if spawned == 0 {
-                // No thread could start: read on this one instead.
+                // No thread could start: read on this one, with the same policy.
+                platform::prepare_reader_thread();
                 let mut buffer = vec![0; CHUNK];
-                for &job in jobs {
+                for job in jobs {
                     if self.cancelled() {
                         break;
                     }
-                    let outcome = work(&candidates[job.0], &mut buffer, &bytes, &cancel);
-                    each(self, job, outcome);
+                    let outcome = read(job, &mut buffer);
+                    files_done += 1;
+                    each(self, *job, outcome);
                 }
                 return;
             }
@@ -699,13 +722,18 @@ fn split(members: &[usize], key: impl Fn(&usize) -> Option<[u8; 32]>) -> Vec<Vec
 
 /// Opens a candidate and checks it is still the file the scan listed, or,
 /// once read before, the very file read then.
-fn open(candidate: &Candidate, path: &Path, sequential: bool) -> Result<Opened, Failure> {
+fn open(
+    path: &Path,
+    candidate: &Candidate,
+    before: Option<&Known>,
+    sequential: bool,
+) -> Result<Opened, Failure> {
     let opened = platform::open(path, sequential)?;
     let known = &opened.known;
-    if known.stamp.size != candidate.size {
+    if !platform::matches_scan(&opened.file, known.stamp.size, candidate.size) {
         return Err(Failure::Changed);
     }
-    if let Some(before) = &candidate.file
+    if let Some(before) = before
         && (before.stamp != known.stamp || before.identity != known.identity)
     {
         return Err(Failure::Changed);
@@ -721,23 +749,27 @@ fn unchanged(opened: &Opened) -> Result<(), Failure> {
     }
 }
 
-/// BLAKE3 of the first and last 16 KiB; of the whole file up to 32 KiB.
+/// BLAKE3 of the compared length and the first and last 16 KiB, which is
+/// the whole file up to 32 KiB.
 fn sample(
     path: &Path,
     candidate: &Candidate,
+    _: Option<&Known>,
     buffer: &mut [u8],
     bytes: &AtomicU64,
     cancel: &AtomicBool,
-) -> Result<(Known, [u8; 32]), Failure> {
-    let mut opened = open(candidate, path, false)?;
+) -> Hashed {
+    let mut opened = open(path, candidate, None, false)?;
+    let size = opened.known.stamp.size;
     let mut hasher = blake3::Hasher::new();
-    let size = candidate.size;
-    let head = size.min(SAMPLE);
+    // Only equal lengths can match, even within one size the scan measured.
+    hasher.update(&size.to_le_bytes());
+    let file = &mut opened.file;
     read_into(
-        &mut opened.file,
+        file,
         &mut hasher,
         0,
-        head,
+        size.min(SAMPLE),
         buffer,
         bytes,
         cancel,
@@ -745,7 +777,7 @@ fn sample(
     if size > SAMPLE {
         let start = SAMPLE.max(size - SAMPLE);
         read_into(
-            &mut opened.file,
+            file,
             &mut hasher,
             start,
             size - start,
@@ -758,21 +790,23 @@ fn sample(
     Ok((opened.known, *hasher.finalize().as_bytes()))
 }
 
-/// BLAKE3 of the whole file.
+/// BLAKE3 of the whole file, which must still be the one sampled.
 fn contents(
     path: &Path,
     candidate: &Candidate,
+    before: Option<&Known>,
     buffer: &mut [u8],
     bytes: &AtomicU64,
     cancel: &AtomicBool,
-) -> Result<(Known, [u8; 32]), Failure> {
-    let mut opened = open(candidate, path, true)?;
+) -> Hashed {
+    let mut opened = open(path, candidate, before, true)?;
+    let size = opened.known.stamp.size;
     let mut hasher = blake3::Hasher::new();
     read_into(
         &mut opened.file,
         &mut hasher,
         0,
-        candidate.size,
+        size,
         buffer,
         bytes,
         cancel,
@@ -815,10 +849,6 @@ fn read_into(
         left -= read as u64;
     }
     Ok(())
-}
-
-fn hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
 /// How many files to read at once, by the kind of drive the folder is on.
@@ -893,7 +923,6 @@ mod platform {
         core::PCWSTR,
     };
 
-    const IO_REPARSE_TAG_DEDUP: u32 = 0x8000_0013;
     /// 100 ns intervals between 1601 and 1970.
     const UNIX_EPOCH: i64 = 116_444_736_000_000_000;
 
@@ -905,6 +934,11 @@ mod platform {
 
     pub(super) fn is_link(_: &io::Error) -> bool {
         false
+    }
+
+    /// Windows reads the main data stream, whose length the scan's size is.
+    pub(super) fn matches_scan(_: &File, size: u64, scanned: u64) -> bool {
+        size == scanned
     }
 
     fn facts(file: &File) -> io::Result<native::Facts> {
@@ -929,17 +963,20 @@ mod platform {
         if facts.attributes & FILE_ATTRIBUTE_DIRECTORY.0 != 0 {
             return Err(Failure::Changed);
         }
-        // CompactOS and deduplicated files are reparse points to the volume
-        // but ordinary files to Windows: their filter driver supplies the
-        // contents only through a handle that follows the reparse point.
-        let filtered = facts.tag == native::IO_REPARSE_TAG_WOF || facts.tag == IO_REPARSE_TAG_DEDUP;
+        // CompactOS files are reparse points to the volume but ordinary
+        // files to Windows, as the scan treats them: their filter driver
+        // supplies the contents only through a handle that follows the tag.
+        let filtered = facts.tag == native::IO_REPARSE_TAG_WOF;
         let attributes = if filtered {
             facts.attributes & !FILE_ATTRIBUTE_REPARSE_POINT.0
         } else {
             facts.attributes
         };
-        if native::skip_attributes(attributes).is_some() {
-            return Err(Failure::Skipped);
+        match native::skip_attributes(attributes) {
+            Some(super::super::Skip::Cloud) => return Err(Failure::Skipped),
+            // The scan listed a file; a link now stands in its place.
+            Some(super::super::Skip::Reparse) => return Err(Failure::Changed),
+            None => {}
         }
         if filtered {
             let followed = native::open_contents(path, false, sequential)?;
@@ -1137,6 +1174,34 @@ mod platform {
         file.metadata().map(|metadata| stamp_of(&metadata))
     }
 
+    /// The scan's size on a Mac also counts a file's resource fork; only the
+    /// data fork, `size` long, is compared.
+    pub(super) fn matches_scan(file: &File, size: u64, scanned: u64) -> bool {
+        size == scanned || (cfg!(target_os = "macos") && size + resource_fork(file) == scanned)
+    }
+
+    #[cfg(target_os = "macos")]
+    fn resource_fork(file: &File) -> u64 {
+        use std::os::fd::AsRawFd;
+        // SAFETY: a null buffer asks only for the attribute's length.
+        let length = unsafe {
+            libc::fgetxattr(
+                file.as_raw_fd(),
+                c"com.apple.ResourceFork".as_ptr(),
+                std::ptr::null_mut(),
+                0,
+                0,
+                0,
+            )
+        };
+        u64::try_from(length).unwrap_or(0)
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    fn resource_fork(_: &File) -> u64 {
+        0
+    }
+
     pub(super) fn open(path: &Path, sequential: bool) -> Result<Opened, Failure> {
         // O_NONBLOCK: a file replaced by a FIFO must not block the open.
         let file = OpenOptions::new()
@@ -1145,7 +1210,8 @@ mod platform {
             .open(path)?;
         let metadata = file.metadata()?;
         if !metadata.file_type().is_file() {
-            return Err(Failure::Skipped);
+            // The scan listed a file; something else now stands in its place.
+            return Err(Failure::Changed);
         }
         #[cfg(target_os = "macos")]
         {
@@ -1239,15 +1305,13 @@ mod platform {
         }
         // SAFETY: the kernel NUL-terminates the device name.
         let device = unsafe { CStr::from_ptr(info.f_mntfromname.as_ptr()) };
-        let medium = std::process::Command::new("/usr/sbin/diskutil")
-            .args(["info", "-plist"])
-            .arg(std::ffi::OsStr::from_bytes(device.to_bytes()))
-            .stdin(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .output()
+        // A tool that hangs on a sleeping disk is stopped, not waited for.
+        let medium = std::str::from_utf8(device.to_bytes())
             .ok()
-            .filter(|output| output.status.success())
-            .and_then(|output| super::solid_state(&String::from_utf8_lossy(&output.stdout)));
+            .and_then(|device| {
+                crate::hardware::macos::run("/usr/sbin/diskutil", &["info", "-plist", device]).ok()
+            })
+            .and_then(|plist| super::solid_state(&plist));
         let medium = match medium {
             Some(true) => Medium::SolidState,
             Some(false) => Medium::Rotational,
@@ -1263,11 +1327,14 @@ mod platform {
 }
 
 /// The JSON report: every group with its copies' paths, oldest first.
+/// `filter` is the search that narrowed `groups`, if any; `summary` counts
+/// every group found.
 pub fn export_json(
     path: &Path,
     nodes: &[ScanNode],
     groups: &[DuplicateGroup],
     summary: &DuplicateSummary,
+    filter: Option<&str>,
 ) -> Result<(), String> {
     #[derive(Serialize)]
     struct Export<'a> {
@@ -1276,6 +1343,7 @@ pub fn export_json(
         comparison: &'static str,
         status: &'static str,
         summary: &'a DuplicateSummary,
+        filter: Option<&'a str>,
         groups: Groups<'a>,
     }
     struct Groups<'a>(&'a [ScanNode], &'a [DuplicateGroup]);
@@ -1325,6 +1393,7 @@ pub fn export_json(
             comparison: "Copies have equal size and BLAKE3 hash of their main data stream when read; each file was unchanged during its reads. Extra hard-link paths of one file are not copies. freeable: bytes on disk deleting that path frees (0 while other hard links remain; APFS excludes blocks shared with clones). reclaimable: freeable sum less the largest copy.",
             status: summary.status(),
             summary,
+            filter,
             groups: Groups(nodes, groups),
         })
         .map_err(|e| e.to_string())?;

@@ -862,7 +862,7 @@ fn walk(table: &Table, root: u32, root_id: usize, at: &Path, worker: &mut Worker
                     if info.named > 0 {
                         append_note(
                             &mut node.note,
-                            &format!("Includes {} named data stream(s)", info.named),
+                            &format!("Includes {} {}", info.named, super::NAMED_STREAMS),
                         );
                     }
                     if attributes & FILE_ATTRIBUTE_SPARSE_FILE.0 != 0 {
@@ -876,7 +876,8 @@ fn walk(table: &Table, root: u32, root_id: usize, at: &Path, worker: &mut Worker
                         traverse = !std::mem::replace(&mut entered[link.record as usize], true);
                         if !traverse {
                             node.incomplete = true;
-                            worker.record_error(
+                            worker.record_node_error(
+                                worker.next_id,
                                 at,
                                 "Cycle in MFT directory references; branch excluded",
                             );

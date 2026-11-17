@@ -147,6 +147,53 @@ fn system_links_in_ancestors_are_resolved_but_a_linked_root_is_not_followed() {
 }
 
 #[test]
+fn unreadable_roots_are_failures_but_partial_trees_are_not() {
+    let node = |id, parent: Option<usize>, is_dir| ScanNode {
+        id,
+        parent,
+        name: if id == 0 {
+            "/data/root".into()
+        } else {
+            id.to_string()
+        },
+        is_dir,
+        logical: 0,
+        allocated: 0,
+        files: 0,
+        children: if id == 0 && is_dir { vec![1] } else { vec![] },
+        note: String::new(),
+        incomplete: false,
+    };
+    let failed = ScanSummary {
+        errors: 1,
+        notes: vec![
+            "Logical bytes count each hard-link path".into(),
+            "/data/root: Permission denied (os error 13)".into(),
+        ],
+        ..Default::default()
+    };
+    // A folder that could not be listed holds only its own node.
+    let mut root = node(0, None, true);
+    root.children.clear();
+    assert_eq!(
+        root_failure(std::slice::from_ref(&root), &failed).as_deref(),
+        Some("/data/root: Permission denied (os error 13)")
+    );
+    assert_eq!(
+        root_failure(&[root], &ScanSummary::default()),
+        None,
+        "an empty folder"
+    );
+    assert!(root_failure(&[], &failed).is_some(), "a refused path");
+    let listed = [node(0, None, true), node(1, Some(0), false)];
+    assert_eq!(
+        root_failure(&listed, &failed),
+        None,
+        "errors below the root are partial"
+    );
+}
+
+#[test]
 fn missing_root_reports_error_instead_of_empty_success() {
     let fixture = tempfile::tempdir().unwrap();
     let (nodes, summary) = collect_scan(&fixture.path().join("missing"));

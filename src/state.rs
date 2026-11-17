@@ -607,6 +607,7 @@ impl State {
             .iter()
             .map(|&g| found.groups[g].clone())
             .collect();
+        let filter = Some(self.filter.trim().to_owned()).filter(|f| !f.is_empty());
         let format = format.to_owned();
         let language = self.settings.language.resolve();
         self.spawn_task("duplicates-export", move |tx| {
@@ -619,7 +620,7 @@ impl State {
                 let result = if format == "csv" {
                     duplicates::export_csv(&path, &nodes, &groups, &summary)
                 } else {
-                    duplicates::export_json(&path, &nodes, &groups, &summary)
+                    duplicates::export_json(&path, &nodes, &groups, &summary, filter.as_deref())
                 };
                 let _ = tx.send(TaskResult::Export(result.map(|_| path)));
             } else {

@@ -1734,12 +1734,13 @@ impl App {
                 ui.label(RichText::new(tx(ui, "Grouping files by size…")).color(accent(ui, GPU)));
             }
         }
-        let reclaimable: u64 = found
-            .groups
-            .iter()
+        // Counts describe the groups shown, which the search may narrow.
+        let shown = found.visible.iter().map(|&g| &found.groups[g]);
+        let reclaimable = shown
+            .clone()
             .map(|g| g.reclaimable)
             .fold(0, u64::saturating_add);
-        let extra: u64 = found.groups.iter().map(|g| g.copies.len() as u64 - 1).sum();
+        let extra: u64 = shown.map(|g| g.copies.len() as u64 - 1).sum();
         let mut export = None;
         ui.horizontal_wrapped(|ui| {
             let text = match &found.summary {
@@ -1751,34 +1752,43 @@ impl App {
                         ui_bytes(ui, summary.min_size)
                     ),
                 ),
+                _ if found.visible.is_empty() && !found.groups.is_empty() => {
+                    tx(ui, "No sets of copies match the search")
+                }
                 _ => td(
                     ui,
                     format!(
                         "{} sets of copies · {} extra copies · up to {} reclaimable",
-                        lang.integer(found.groups.len() as u64),
+                        lang.integer(found.visible.len() as u64),
                         lang.integer(extra),
                         ui_bytes(ui, reclaimable)
                     ),
                 ),
             };
             ui.label(RichText::new(text).size(15.));
-            if let Some(summary) = &found.summary
-                && !found.groups.is_empty()
-            {
-                ui.add_enabled_ui(self.state.task.is_none(), |ui| {
-                    for format in ["CSV", "JSON"] {
-                        if ui
-                            .button(format)
-                            .on_hover_text(tx(ui, "Export the sets of copies shown"))
-                            .clicked()
-                        {
-                            export = Some(format.to_lowercase());
+            if let Some(summary) = &found.summary {
+                if !found.visible.is_empty() {
+                    ui.add_enabled_ui(self.state.task.is_none(), |ui| {
+                        for format in ["CSV", "JSON"] {
+                            if ui
+                                .button(format)
+                                .on_hover_text(tx(ui, "Export the sets of copies shown"))
+                                .clicked()
+                            {
+                                export = Some(format.to_lowercase());
+                            }
                         }
-                    }
-                });
-                if summary.cancelled {
+                    });
+                }
+                // An incomplete search must not read as "no copies" or "all copies".
+                let status = match summary.status() {
+                    "cancelled_partial" => Some("Partial · cancelled"),
+                    "partial" => Some("Partial"),
+                    _ => None,
+                };
+                if let Some(status) = status {
                     ui.label(
-                        RichText::new(tx(ui, "Partial · cancelled"))
+                        RichText::new(tx(ui, status))
                             .size(12.)
                             .color(accent(ui, GPU)),
                     );

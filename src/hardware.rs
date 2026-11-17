@@ -1,6 +1,6 @@
 //! Read-only hardware discovery and telemetry. Construct and poll on the sensor worker.
 #[cfg(any(target_os = "macos", test))]
-mod macos;
+pub(crate) mod macos;
 #[cfg(windows)]
 mod nvml;
 #[cfg(any(windows, test))]

@@ -27,6 +27,8 @@ const MAX_RETAINED_BYTES: usize = 1536 * 1024 * 1024;
 const MAX_NOTE_BYTES: usize = 4096;
 const NOTE_TRUNCATED: &str = "… [additional details omitted]";
 const METADATA_UNAVAILABLE: &str = "Metadata unavailable";
+/// Ends the note on files whose size includes named data streams.
+const NAMED_STREAMS: &str = "named data stream(s)";
 const HARD_LINK_ALIAS: &str =
     "Hard-link alias: allocated bytes attributed to another path in this scan";
 
@@ -70,30 +72,44 @@ pub struct ScanSummary {
     /// sizes remain lower bounds even for administrators. Included in `errors`.
     #[serde(default)]
     pub locked: u64,
+    /// Errors that belong to no entry, such as MFT records that changed on
+    /// every read: they may be in any folder. Included in `errors`.
+    #[serde(default)]
+    pub unplaced_errors: u64,
 }
 
-/// Why the scan root itself could not be read, if it could not: such a scan
-/// holds one placeholder node and no measurement at all.
+/// Why the scan root itself could not be read, if it could not: the path was
+/// refused, its metadata failed, or the folder could not be listed at all.
+/// Such a scan holds at most one placeholder node and no measurement.
 pub fn root_failure(nodes: &[ScanNode], summary: &ScanSummary) -> Option<String> {
-    match nodes.first() {
-        None => Some(summary.notes.first().cloned().unwrap_or_default()),
-        Some(root) if root.note.starts_with(METADATA_UNAVAILABLE) => Some(format!(
-            "{}: {}",
-            root.name,
-            root.note
-                .strip_prefix(METADATA_UNAVAILABLE)
-                .unwrap_or_default()
-                .trim_start_matches(": ")
-        )),
-        Some(_) => None,
+    let failed = match nodes {
+        [] => true,
+        [root] => {
+            summary.errors > 0 && (root.is_dir || root.note.starts_with(METADATA_UNAVAILABLE))
+        }
+        _ => false,
+    };
+    if !failed {
+        return None;
     }
+    // Errors on the root are noted as "<root path>: <error>".
+    let prefix = nodes.first().map(|root| format!("{}: ", root.name));
+    Some(
+        summary
+            .notes
+            .iter()
+            .find(|note| prefix.as_ref().is_none_or(|p| note.starts_with(p)))
+            .or(summary.notes.last())
+            .cloned()
+            .unwrap_or_default(),
+    )
 }
 
 /// Whether the scan missed or could not measure anything below `root`: it
 /// was cancelled or stopped, or an error was recorded inside that folder.
 /// Excluded links and placeholders are deliberate and do not count.
 pub fn subtree_partial(nodes: &[ScanNode], summary: &ScanSummary, root: usize) -> bool {
-    if summary.cancelled || summary.stopped_early {
+    if summary.cancelled || summary.stopped_early || summary.unplaced_errors > 0 {
         return true;
     }
     summary.incomplete_nodes.iter().any(|&id| {
@@ -379,7 +395,14 @@ impl Worker {
         self.stopped || self.cancel.load(Ordering::Relaxed)
     }
 
+    /// Records an error that belongs to no single entry.
+    #[cfg_attr(not(windows), allow(dead_code))]
     fn record_error(&mut self, path: &Path, message: &str) {
+        self.summary.unplaced_errors += 1;
+        self.note_error(path, message);
+    }
+
+    fn note_error(&mut self, path: &Path, message: &str) {
         self.summary.errors += 1;
         if self.summary.incomplete_nodes.first() != Some(&0) {
             self.summary.incomplete_nodes.insert(0, 0);
@@ -395,7 +418,7 @@ impl Worker {
         // Sorting/deduplication happens once at completion, avoiding quadratic
         // work when many directories are inaccessible.
         self.summary.incomplete_nodes.push(id);
-        self.record_error(path, message);
+        self.note_error(path, message);
     }
 
     /// Records a filesystem error on node `id`. With `count_refusal`, access
@@ -488,7 +511,8 @@ impl Worker {
                 let refusal = Refusal::of_os_error(error.raw_os_error());
                 refused = refusal.is_some();
                 self.count_refusal(refusal);
-                self.record_error(path, &error.to_string());
+                // The failing entry is the node about to be added.
+                self.record_node_error(self.next_id, path, &error.to_string());
                 node.note = format!("{METADATA_UNAVAILABLE}: {error}");
                 node.incomplete = true;
             }

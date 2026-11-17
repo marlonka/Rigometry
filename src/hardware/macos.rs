@@ -74,7 +74,7 @@ mod sys {
 /// Runs a system tool for its output. A tool that hangs is stopped after
 /// 30 seconds, so it cannot stall discovery or sampling for good.
 #[cfg(target_os = "macos")]
-fn run(program: &str, args: &[&str]) -> Result<String, String> {
+pub(crate) fn run(program: &str, args: &[&str]) -> Result<String, String> {
     use std::{
         io::Read,
         process::Stdio,
