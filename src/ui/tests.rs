@@ -5,7 +5,7 @@ use super::*;
 use egui::accesskit::Role;
 use egui_kittest::{
     Harness,
-    kittest::{By, Queryable},
+    kittest::{By, NodeT, Queryable},
 };
 use std::{collections::VecDeque, fs, path::Path, sync::atomic::Ordering};
 
@@ -1309,4 +1309,75 @@ fn duplicates_are_found_on_request_filtered_by_search_and_cleared_by_a_new_scan(
     harness.step();
     assert!(harness.state().state.duplicates.is_none());
     wait_for_scan(&mut harness);
+}
+
+#[test]
+fn a_newer_release_is_announced_and_installs_only_where_it_can() {
+    let mut harness = app_harness();
+    let release = crate::update::Release {
+        tag: "v99.0.0".into(),
+        version: "99.0.0".into(),
+        url: "https://github.com/marlonka/Rigometry/releases/tag/v99.0.0".into(),
+        notes: vec!["Duplicate files: compare by content.".into()],
+        asset: Some(crate::update::Asset {
+            name: "Rigometry-99.0.0-windows-x64.zip".into(),
+            url: "https://github.com/marlonka/Rigometry/releases/download/v99.0.0/x.zip".into(),
+            size: 8 << 20,
+            sha256: Some("a".repeat(64)),
+            sums_url: None,
+        }),
+    };
+    let mut updates = crate::state::Updates::new(crate::update::Record {
+        checked_at: Some(now_ms()),
+        release: Some(release),
+        ..Default::default()
+    });
+    // A build from the code never replaces itself, whatever the system.
+    updates.target = crate::update::Target::Fixed("This copy was built from the source code");
+    harness.state_mut().state.updates = Some(updates);
+    harness.run_steps(2);
+    click(&harness, Role::Button, "Update 99.0.0 available");
+    harness.run_steps(2);
+    assert_eq!(harness.state().state.settings.page, Page::Settings);
+    assert!(
+        harness
+            .query_by_role_and_label(Role::Label, "Version 99.0.0 is available")
+            .is_some()
+    );
+    assert!(
+        harness
+            .query_by_role_and_label(Role::Label, "•  Duplicate files: compare by content.")
+            .is_some(),
+        "the notes are shown as plain text"
+    );
+    let install = harness.get_by_role_and_label(Role::Button, "Update and restart");
+    assert!(
+        install.accesskit_node().is_disabled(),
+        "this copy cannot replace itself"
+    );
+    install.click();
+    harness.run_steps(2);
+    assert!(
+        harness
+            .state()
+            .state
+            .updates
+            .as_ref()
+            .unwrap()
+            .installing
+            .is_none()
+    );
+    // Skipping hides the sidebar notice but keeps the release in Settings.
+    click(&harness, Role::Button, "Skip this version");
+    harness.run_steps(2);
+    assert!(
+        harness
+            .query_by_role_and_label(Role::Button, "Update 99.0.0 available")
+            .is_none()
+    );
+    assert!(
+        harness
+            .query_by_role_and_label(Role::Button, "Release page")
+            .is_some()
+    );
 }

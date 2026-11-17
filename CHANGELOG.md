@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **Updates from inside the app:** Rigometry asks GitHub every six hours whether a new version is out and shows it in the sidebar. **Settings → Updates → Update and restart** downloads it, checks it against GitHub's SHA-256 checksum, replaces the app in place on Windows and macOS and restarts with your settings. Nothing installs without a click; the automatic check can be turned off. [How updates work](https://github.com/marlonka/Rigometry/blob/main/docs/usage.md#updates)
+
 ## 0.4.0
 
 - **Duplicate files:** a new **Duplicates** view on the Storage page compares the files below the current folder by content, after a scan and only on request. Only same-size files are read; the first and last 16 KiB rule out most, and BLAKE3 hashes confirm the rest. The biggest savings appear first, the oldest copy leads each group, and the search filters groups. Hard links are not copies, APFS clones count only their own blocks, cloud files are never downloaded and changed files are left out. Export as CSV or JSON, or run `--headless --scan PATH --duplicates FILE [--min-size SIZE]`. [How it works](docs/usage.md#duplicate-files)

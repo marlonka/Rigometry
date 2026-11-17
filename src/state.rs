@@ -1,3 +1,4 @@
+use crate::update;
 use crate::{
     hardware,
     model::*,
@@ -13,7 +14,7 @@ use std::{
     path::PathBuf,
     sync::{
         Arc,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
     },
     time::{Duration, Instant},
 };
@@ -43,6 +44,8 @@ pub struct Settings {
     pub reduce_motion: bool,
     /// Smallest file the duplicate search reads, in bytes.
     pub duplicate_min_size: u64,
+    /// Ask GitHub every six hours whether a new version is out.
+    pub check_updates: bool,
 }
 impl Default for Settings {
     fn default() -> Self {
@@ -55,6 +58,7 @@ impl Default for Settings {
             path: String::new(),
             reduce_motion: false,
             duplicate_min_size: duplicates::DEFAULT_MIN_SIZE,
+            check_updates: true,
         }
     }
 }
@@ -108,11 +112,58 @@ pub struct State {
     pub adapter: usize,
     pub notice: Option<String>,
     pub task: Option<Receiver<TaskResult>>,
+    /// New versions: only in the app itself, never in tests or capture mode.
+    pub updates: Option<Updates>,
     receiver: Receiver<HardwareEvent>,
     stop: Arc<AtomicBool>,
     /// Repaints the UI when a background scan or search queues results.
     wake: storage::Wake,
 }
+/// Whether a newer version is out, and its installation.
+pub struct Updates {
+    pub record: update::Record,
+    /// What an update would replace.
+    pub target: update::Target,
+    /// A look in progress, and whether someone asked for it.
+    checking: Option<(Receiver<Result<update::Checked, String>>, bool)>,
+    pub installing: Option<Installing>,
+    /// Installed: start this program and close.
+    pub ready: Option<PathBuf>,
+    pub error: Option<String>,
+    started: Instant,
+}
+
+pub struct Installing {
+    pub version: String,
+    pub received: Arc<AtomicU64>,
+    pub total: u64,
+    cancel: Arc<AtomicBool>,
+    receiver: Receiver<Result<PathBuf, String>>,
+}
+
+impl Updates {
+    pub fn new(record: update::Record) -> Self {
+        Self {
+            record,
+            target: update::target(),
+            checking: None,
+            installing: None,
+            ready: None,
+            error: None,
+            started: Instant::now(),
+        }
+    }
+
+    pub fn checking(&self) -> bool {
+        self.checking.is_some()
+    }
+
+    /// The newer release this computer can install, if one is known.
+    pub fn offered(&self) -> Option<&update::Release> {
+        self.record.offered(update::running_version())
+    }
+}
+
 /// What the storage results show below the toolbar.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum View {
@@ -241,6 +292,7 @@ impl State {
             adapter: 0,
             notice: None,
             task: None,
+            updates: None,
             receiver,
             stop,
             wake,
@@ -341,6 +393,7 @@ impl State {
             }
         }
         self.receive_duplicates(start);
+        self.tick_updates();
         if self.dirty
             && (self.scan.is_none()
                 || self.urgent
@@ -629,6 +682,152 @@ impl State {
         });
     }
 
+    /// Takes in update results and starts a look by itself when one is due.
+    fn tick_updates(&mut self) {
+        let automatic = update::automatic(self.settings.check_updates);
+        let Some(updates) = &mut self.updates else {
+            return;
+        };
+        let now = now_ms();
+        if let Some((receiver, asked)) = &updates.checking {
+            match receiver.try_recv() {
+                Ok(Ok(checked)) => {
+                    updates.record.apply(&checked, now);
+                    updates.checking = None;
+                }
+                Ok(Err(error)) => {
+                    if *asked {
+                        updates.error = Some(error);
+                    }
+                    updates.checking = None;
+                }
+                Err(TryRecvError::Empty) => {}
+                Err(TryRecvError::Disconnected) => updates.checking = None,
+            }
+        }
+        if let Some(installing) = &updates.installing {
+            match installing.receiver.try_recv() {
+                Ok(Ok(program)) => updates.ready = Some(program),
+                Ok(Err(error)) => {
+                    updates.error = Some(error);
+                    updates.installing = None;
+                }
+                Err(TryRecvError::Empty) => {}
+                Err(TryRecvError::Disconnected) => {
+                    updates.error = Some("The update stopped before completion".into());
+                    updates.installing = None;
+                }
+            }
+        }
+        if automatic
+            && updates.checking.is_none()
+            && updates.installing.is_none()
+            && updates.started.elapsed() >= update::FIRST_LOOK
+            && updates.record.due(now)
+        {
+            self.check_updates(false);
+        }
+    }
+
+    /// Asks GitHub for the latest release. Someone asking within a minute of
+    /// the last look gets that look; a look by itself fails quietly.
+    pub fn check_updates(&mut self, asked: bool) {
+        let wake = self.wake.clone();
+        let Some(updates) = &mut self.updates else {
+            return;
+        };
+        if updates.checking.is_some() || (asked && updates.record.fresh(now_ms())) {
+            return;
+        }
+        updates.error = None;
+        // Without a known release, a 304 would leave nothing to show.
+        let etag = updates
+            .record
+            .etag
+            .clone()
+            .filter(|_| updates.record.release.is_some());
+        let (sender, receiver) = bounded(1);
+        let spawned = std::thread::Builder::new()
+            .name("update-check".into())
+            .spawn(move || {
+                let _ = sender.send(update::check(etag.as_deref()));
+                wake();
+            });
+        match spawned {
+            Ok(_) => updates.checking = Some((receiver, asked)),
+            Err(error) => updates.error = Some(format!("Could not start background task: {error}")),
+        }
+    }
+
+    /// Why an update cannot be installed now, if it cannot.
+    pub fn update_blocked(&self) -> Option<&'static str> {
+        let updates = self.updates.as_ref()?;
+        if let update::Target::Fixed(reason) = updates.target {
+            Some(reason)
+        } else if self.scan.is_some() || self.duplicates_running() || self.task.is_some() {
+            Some("Finish or cancel the running scan, search or export first")
+        } else if updates.installing.is_some() {
+            Some("The update is already being installed")
+        } else {
+            None
+        }
+    }
+
+    /// Downloads, checks and puts in place the offered release, then lets the
+    /// app restart into it.
+    pub fn install_update(&mut self) {
+        if self.update_blocked().is_some() {
+            return;
+        }
+        let wake = self.wake.clone();
+        let Some(updates) = &mut self.updates else {
+            return;
+        };
+        let Some(release) = updates.offered().cloned() else {
+            return;
+        };
+        let target = updates.target.clone();
+        let received = Arc::new(AtomicU64::new(0));
+        let cancel = Arc::new(AtomicBool::new(false));
+        let (sender, receiver) = bounded(1);
+        let (thread_received, thread_cancel) = (received.clone(), cancel.clone());
+        let version = release.version.clone();
+        let total = release.asset.as_ref().map_or(0, |asset| asset.size);
+        let spawned = std::thread::Builder::new()
+            .name("update-install".into())
+            .spawn(move || {
+                let result = update::install(&release, &target, &thread_received, &thread_cancel);
+                let _ = sender.send(result);
+                wake();
+            });
+        updates.error = None;
+        match spawned {
+            Ok(_) => {
+                updates.installing = Some(Installing {
+                    version,
+                    received,
+                    total,
+                    cancel,
+                    receiver,
+                })
+            }
+            Err(error) => updates.error = Some(format!("Could not start background task: {error}")),
+        }
+    }
+
+    pub fn cancel_update(&mut self) {
+        if let Some(installing) = self.updates.as_ref().and_then(|u| u.installing.as_ref()) {
+            installing.cancel.store(true, Ordering::Relaxed);
+        }
+    }
+
+    /// The user does not want to hear of this version again; the next one is offered as usual.
+    pub fn skip_update(&mut self) {
+        if let Some(updates) = &mut self.updates {
+            updates.record.skipped = updates.offered().map(|release| release.version.clone());
+        }
+    }
+
     pub fn export_hardware(&mut self) {
         if self.task.is_some() {
             return;
@@ -853,6 +1052,7 @@ impl Drop for State {
         self.stop.store(true, Ordering::Relaxed);
         self.cancel_scan();
         self.cancel_duplicates();
+        self.cancel_update();
     }
 }
 

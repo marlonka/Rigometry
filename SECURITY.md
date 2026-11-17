@@ -19,5 +19,6 @@ Include the version, Windows version, impact and reproduction using disposable f
 - Scans observe a changing filesystem. Large or slow trees consume memory and time; cancellation cannot interrupt every blocked Windows API call.
 - Exports contain paths and hardware information. Review them before sharing. CSV formula prefixes are escaped.
 - Builds are unsigned. Published checksums identify bytes; they do not authenticate a publisher independently.
+- Updates are downloaded only from this repository's GitHub releases, over HTTPS with the system's `curl`, and installed only after a click. The download must match the size and SHA-256 that GitHub publishes for the release asset, and the unpacked program must report the release's version (and on a Mac pass `codesign --verify`) before it replaces anything. This verifies that the file is the one the release names; like the checksums above, it relies on the integrity of the GitHub repository and account.
 
 Dependency advisories are checked in CI and before a release. A passing check cannot establish absence of unknown vulnerabilities.

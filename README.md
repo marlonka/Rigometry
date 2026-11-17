@@ -35,7 +35,7 @@ As administrator, Rigometry reads the NTFS master file table directly. Without a
 - **Use the interface or command line:** dark/light themes, adjustable text size, reduced motion, hardware reports and automated scans.
 - **Choose your language:** English, Deutsch, Français or Español. The app follows the Windows or macOS language by default; change it in Settings without restarting.
 
-Hardware queries, scans and duplicate searches are read-only. No account, telemetry upload or bundled driver; administrator rights are requested only when you choose **Scan as administrator**. Settings are saved locally; reports and exports are created when requested.
+Hardware queries, scans and duplicate searches are read-only. No account, telemetry upload or bundled driver; administrator rights are requested only when you choose **Scan as administrator**. Settings are saved locally; reports and exports are created when requested. Every six hours the app asks GitHub whether a new version is out; nothing about you is sent beyond the request itself, and Settings turns it off.
 
 <details>
 <summary>More screenshots</summary>
@@ -68,6 +68,8 @@ Open [Releases](https://github.com/marlonka/Rigometry/releases), download the Wi
 On a Mac, download the `macos-universal` ZIP, extract it and move **Rigometry.app** to Applications. The app is not notarized, so macOS asks once for confirmation: [step-by-step guide](docs/usage.md#install-on-macos).
 
 Releases include a SHA-256 checksum beside the ZIP and per-file checksums inside it. The executable is unsigned; a checksum verifies file integrity, not publisher identity. No installer is required.
+
+**Updates:** when a new version is out, the sidebar says so. **Settings → Updates → Update and restart** downloads it from this repository's releases, checks it against GitHub's SHA-256 checksum, replaces the app in place and restarts it; settings are kept. [How updates work](docs/usage.md#updates)
 
 ```powershell
 # Build from an x64 Developer PowerShell with Rust and C++ Build Tools installed.

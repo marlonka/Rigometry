@@ -42,6 +42,8 @@ pub struct App {
     map_origin: Pos2,
     cpu_tab: usize,
     window_override: Option<Vec2>,
+    /// The window was closed during an update; it closes when that ends.
+    close_after_update: bool,
 }
 impl App {
     pub fn new(
@@ -49,8 +51,25 @@ impl App {
         scan: Option<String>,
         capture_dir: Option<PathBuf>,
         capture_failed: Arc<AtomicBool>,
+        updated_from: Option<String>,
     ) -> Self {
-        Self::with_state(cc, scan, capture_dir, capture_failed, State::new)
+        let capture = capture_dir.is_some();
+        let mut app = Self::with_state(cc, scan, capture_dir, capture_failed, State::new);
+        // The real app looks for new versions; tests and screenshots never do.
+        if !capture {
+            let record = cc
+                .storage
+                .and_then(|storage| eframe::get_value(storage, "update"))
+                .unwrap_or_default();
+            app.state.updates = Some(crate::state::Updates::new(record));
+            if let Some(from) = updated_from {
+                app.state.notice = Some(format!(
+                    "Updated from {from} to {}",
+                    env!("CARGO_PKG_VERSION")
+                ));
+            }
+        }
+        app
     }
 
     fn with_state(
@@ -148,6 +167,7 @@ impl App {
             map_key: None,
             map_origin: Pos2::ZERO,
             cpu_tab: 0,
+            close_after_update: false,
         }
     }
     fn sidebar(&mut self, ui: &mut Ui) {
@@ -181,6 +201,25 @@ impl App {
             if !dense {
                 ui.add_space(8.);
                 caption(ui, PLATFORM_LABEL);
+                // A new version, unless the user chose to skip it.
+                let available = self.state.updates.as_ref().and_then(|updates| {
+                    updates
+                        .offered()
+                        .filter(|r| updates.record.skipped.as_deref() != Some(&r.version))
+                        .map(|r| r.version.clone())
+                });
+                if let Some(version) = available {
+                    let text = td(ui, format!("Update {version} available"));
+                    if ui
+                        .add(
+                            Button::new(RichText::new(text).size(12.).color(accent(ui, GPU)))
+                                .frame(false),
+                        )
+                        .clicked()
+                    {
+                        self.state.settings.page = Page::Settings;
+                    }
+                }
                 ui.add_space(16.);
             }
             if navigation(
@@ -2176,6 +2215,8 @@ impl App {
             }
         });
         ui.add_space(26.);
+        section(ui, "Updates", |ui| self.updates_section(ui));
+        ui.add_space(26.);
         section(ui, "Keyboard", |ui| {
             for (key, label) in [
                 (
@@ -2209,6 +2250,160 @@ impl App {
             ))
             .color(muted(ui)),
         );
+    }
+
+    /// The version, the automatic check, and a newer release with its notes and
+    /// the one click that installs it.
+    fn updates_section(&mut self, ui: &mut Ui) {
+        ui.label(concat!("Rigometry ", env!("CARGO_PKG_VERSION")));
+        ui.checkbox(
+            &mut self.state.settings.check_updates,
+            tx(ui, "Check for new versions automatically"),
+        );
+        caption(
+            ui,
+            tx(
+                ui,
+                "Rigometry asks GitHub every six hours. Nothing about you is sent beyond the request itself. Updates install only when you click.",
+            ),
+        );
+        ui.add_space(8.);
+        let blocked = self.state.update_blocked();
+        let Some(updates) = &self.state.updates else {
+            return;
+        };
+        let mut action = None;
+        if let Some(installing) = &updates.installing {
+            let received = installing
+                .received
+                .load(std::sync::atomic::Ordering::Relaxed);
+            let fraction = if installing.total == 0 {
+                0.
+            } else {
+                received as f32 / installing.total as f32
+            };
+            let text = if received >= installing.total {
+                td(ui, format!("Installing version {}…", installing.version))
+            } else {
+                td(
+                    ui,
+                    format!(
+                        "Downloading version {}: {} of {}",
+                        installing.version,
+                        ui_bytes(ui, received),
+                        ui_bytes(ui, installing.total)
+                    ),
+                )
+            };
+            ui.add(ProgressBar::new(fraction.clamp(0., 1.)).text(text));
+            if ui.button(tx(ui, "Cancel")).clicked() {
+                action = Some("cancel");
+            }
+        } else if let Some(release) = updates.offered() {
+            ui.label(
+                RichText::new(td(ui, format!("Version {} is available", release.version)))
+                    .size(16.)
+                    .strong(),
+            );
+            for note in &release.notes {
+                ui.label(format!("•  {note}"));
+            }
+            ui.horizontal_wrapped(|ui| {
+                let install = ui
+                    .add_enabled(
+                        blocked.is_none(),
+                        Button::new(tx(ui, "Update and restart")),
+                    )
+                    .on_hover_text(tx(ui, "Downloads the new version from GitHub, checks it against GitHub's SHA-256 checksum, replaces this copy and restarts. Settings are kept."));
+                if let Some(reason) = blocked {
+                    install.on_disabled_hover_text(tx(ui, reason));
+                } else if install.clicked() {
+                    action = Some("install");
+                }
+                if ui.button(tx(ui, "Release page")).clicked() {
+                    action = Some("page");
+                }
+                if updates.record.skipped.as_deref() != Some(&release.version)
+                    && ui.button(tx(ui, "Skip this version")).clicked()
+                {
+                    action = Some("skip");
+                }
+            });
+            if let Some(reason) =
+                blocked.filter(|_| matches!(updates.target, crate::update::Target::Fixed(_)))
+            {
+                caption(ui, tx(ui, reason));
+            }
+        } else if updates.checking() {
+            caption(ui, tx(ui, "Checking for updates…"));
+        } else if updates.record.checked_at.is_some() {
+            caption(ui, tx(ui, "This is the newest version."));
+        }
+        if let Some(error) = &updates.error {
+            ui.label(
+                RichText::new(td(ui, error))
+                    .size(12.)
+                    .color(ui.visuals().warn_fg_color),
+            );
+        }
+        if updates.installing.is_none()
+            && ui
+                .add_enabled(!updates.checking(), Button::new(tx(ui, "Check now")))
+                .clicked()
+        {
+            action = Some("check");
+        }
+        match action {
+            Some("install") => self.state.install_update(),
+            Some("cancel") => self.state.cancel_update(),
+            Some("skip") => self.state.skip_update(),
+            Some("check") => self.state.check_updates(true),
+            Some("page") => {
+                let url = self
+                    .state
+                    .updates
+                    .as_ref()
+                    .and_then(|u| u.offered())
+                    .map(|r| r.url.clone());
+                if let Some(url) = url
+                    && let Err(error) = crate::update::open_page(&url)
+                {
+                    self.state.notice = Some(error);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Restarts into an installed update. While files are being replaced the
+    /// window does not close: closing cancels a download, and an installation
+    /// that is past it completes first.
+    fn finish_update(&mut self, ctx: &Context) {
+        let Some(updates) = &mut self.state.updates else {
+            return;
+        };
+        if let Some(program) = updates.ready.take() {
+            updates.installing = None;
+            // Asked to close meanwhile: the new version is in place for next time.
+            if self.close_after_update {
+                ctx.send_viewport_cmd(ViewportCommand::Close);
+                return;
+            }
+            match crate::update::launch(&program, env!("CARGO_PKG_VERSION")) {
+                Ok(()) => ctx.send_viewport_cmd(ViewportCommand::Close),
+                Err(error) => updates.error = Some(error),
+            }
+            return;
+        }
+        if updates.installing.is_some() {
+            if ctx.input(|i| i.viewport().close_requested()) {
+                ctx.send_viewport_cmd(ViewportCommand::CancelClose);
+                self.close_after_update = true;
+                self.state.cancel_update();
+            }
+        } else if self.close_after_update {
+            ctx.send_viewport_cmd(ViewportCommand::Close);
+        }
     }
 
     fn fail_capture(&mut self, ctx: &Context, error: String) {
@@ -2395,13 +2590,21 @@ impl eframe::App for App {
         {
             ctx.send_viewport_cmd(ViewportCommand::Close);
         }
+        self.finish_update(ctx);
         let live_view = matches!(
             self.state.settings.page,
             Page::Overview | Page::Cpu | Page::Gpu
         );
         ctx.request_repaint_after(if live_view && !self.state.settings.reduce_motion {
             Duration::from_millis(33)
-        } else if self.state.scan.is_some() || self.state.duplicates_running() {
+        } else if self.state.scan.is_some()
+            || self.state.duplicates_running()
+            || self
+                .state
+                .updates
+                .as_ref()
+                .is_some_and(|u| u.checking() || u.installing.is_some())
+        {
             Duration::from_millis(80)
         } else {
             Duration::from_secs(1)
@@ -2480,6 +2683,9 @@ impl eframe::App for App {
     fn save(&mut self, storage: &mut dyn eframe::Storage) {
         if self.capture_dir.is_none() {
             eframe::set_value(storage, "settings", &self.state.settings);
+        }
+        if let Some(updates) = &self.state.updates {
+            eframe::set_value(storage, "update", &updates.record);
         }
     }
     fn persist_egui_memory(&self) -> bool {

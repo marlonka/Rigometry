@@ -57,6 +57,10 @@ To reproduce an emulated run locally, pass the emulator as a command prefix:
 pwsh -File .\scripts\verify-windows.ps1 -SkipBuild -SkipTests -TimeoutSeconds 900 -Launcher C:\path\to\sde.exe, '-nhm', '--'
 ```
 
+## Updates
+
+`RIGOMETRY_PRETEND_VERSION=0.1.0` makes a build count as an older version, so it is offered the latest release; `RIGOMETRY_NO_UPDATE_CHECK=1` and the `CI` variable stop automatic checks. A copy started from `target/` (a `Cargo.toml` above it) never replaces itself: package it first. `cargo test -- --ignored a_published_release_downloads_verifies_and_unpacks` downloads the latest published Mac release with the system's `curl`, checks GitHub's digest and unpacks it.
+
 ## Visual checks
 
 ```powershell

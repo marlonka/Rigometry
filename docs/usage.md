@@ -17,6 +17,18 @@ To check the download first, open Terminal in the Downloads folder and run `shas
 
 On a Mac, Rigometry shows CPU and memory activity, processor details, drives and the full storage analysis. **Show in Finder** replaces Explorer. GPU sensors, motherboard and RAM-module details, and **Scan as administrator** are Windows-only. Scans read whole folder listings on up to eight threads with `getattrlistbulk`, the macOS counterpart of the Windows folder listing, and open no file. Scanning `/` covers the startup disk once, including `/Users` and `/Applications` on the data volume, and does not enter other mounted volumes such as `/System/Volumes/Data`, `/Volumes` or `/dev`; scan those directly. Files stored only in iCloud count as cloud placeholders and are not downloaded. The first scan of Desktop, Documents or Downloads makes macOS ask whether Rigometry may access that folder. Folders macOS protects, such as Mail or Safari data, need **Full Disk Access** for Rigometry under **System Settings → Privacy & Security**; without it they count as refused, not as errors. Shortcuts use ⌘ instead of Ctrl, for example ⌘1 to ⌘4.
 
+## Updates
+
+Rigometry asks GitHub for the latest release five seconds after it starts and again every six hours while it is open. When a newer version is out, **Update x.y.z available** appears at the bottom of the sidebar, and **Settings → Updates** shows what is new.
+
+- **Update and restart** downloads the release's ZIP for your system from this repository's releases, checks its size and the SHA-256 checksum GitHub publishes for it, unpacks it with the system's own tools and makes sure the new version starts. Only then does it replace the app: on Windows the files in the app's folder, on a Mac `Rigometry.app`. The new version starts once the old one has closed and saved its settings.
+- Nothing is installed without your click, and a scan, duplicate search or export must finish first. Closing the window during a download cancels it; an update that is already replacing files completes, and the new version is used the next time.
+- **Skip this version** hides the sidebar notice until the next version. **Release page** opens the release on GitHub.
+- The app updates itself only where it can write: the folder you unpacked on Windows, `Rigometry.app` in **Applications** on a Mac. A Mac app started straight from **Downloads** runs from a read-only copy; move it to **Applications** first. A copy built from the source code shows the release page instead.
+- Turn off **Check for new versions automatically** to stop the automatic checks; **Check now** still asks. The checks send nothing beyond the request itself, which GitHub sees with your IP address and the app's version. Setting `RIGOMETRY_NO_UPDATE_CHECK` turns them off as well.
+
+Downloads use the system's `curl`, which Windows 10 and later and macOS include, with its certificate store. Rigometry itself contains no network code beyond starting it.
+
 ## Navigation
 
 | Action | Shortcut |

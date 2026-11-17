@@ -1210,5 +1210,143 @@
     "Der Grafiktreiber meldet keinen solchen Sensor",
     "Le pilote graphique ne signale pas ce capteur",
     "El controlador gráfico no informa de este sensor"
+  ],
+  [
+    "Update cancelled",
+    "Update abgebrochen",
+    "Mise à jour annulée",
+    "Actualización cancelada"
+  ],
+  [
+    "The download took too long",
+    "Der Download hat zu lange gedauert",
+    "Le téléchargement a pris trop de temps",
+    "La descarga tardó demasiado"
+  ],
+  [
+    "GitHub could not be reached: {0}",
+    "GitHub war nicht erreichbar: {0}",
+    "GitHub est injoignable : {0}",
+    "No se pudo conectar con GitHub: {0}"
+  ],
+  [
+    "curl could not start: {0}",
+    "curl konnte nicht gestartet werden: {0}",
+    "curl n’a pas pu démarrer : {0}",
+    "curl no pudo iniciarse: {0}"
+  ],
+  [
+    "GitHub answered {0}",
+    "GitHub antwortete {0}",
+    "GitHub a répondu {0}",
+    "GitHub respondió {0}"
+  ],
+  [
+    "GitHub's answer is not JSON",
+    "Die Antwort von GitHub ist kein JSON",
+    "La réponse de GitHub n’est pas du JSON",
+    "La respuesta de GitHub no es JSON"
+  ],
+  [
+    "Rigometry cannot write beside itself: {0}",
+    "Rigometry kann nicht neben sich selbst schreiben: {0}",
+    "Rigometry ne peut pas écrire à côté de lui-même : {0}",
+    "Rigometry no puede escribir junto a sí mismo: {0}"
+  ],
+  [
+    "The release has no download for this computer",
+    "Das Release hat keinen Download für diesen Computer",
+    "La version n’a pas de téléchargement pour cet ordinateur",
+    "La versión no tiene descarga para este equipo"
+  ],
+  [
+    "The release's download has an unexpected size",
+    "Der Download des Release hat eine unerwartete Größe",
+    "Le téléchargement de la version a une taille inattendue",
+    "La descarga de la versión tiene un tamaño inesperado"
+  ],
+  [
+    "The release has no checksum for its download, so it is not installed",
+    "Das Release hat keine Prüfsumme für seinen Download und wird daher nicht installiert",
+    "La version n’a pas de somme de contrôle pour son téléchargement ; elle n’est donc pas installée",
+    "La versión no tiene suma de comprobación para su descarga, así que no se instala"
+  ],
+  [
+    "The release's checksum file does not name its download",
+    "Die Prüfsummendatei des Release nennt seinen Download nicht",
+    "Le fichier de sommes de contrôle de la version ne mentionne pas son téléchargement",
+    "El archivo de sumas de la versión no incluye su descarga"
+  ],
+  [
+    "The download is not the file the release names, so it is not installed",
+    "Der Download ist nicht die Datei, die das Release nennt, und wird daher nicht installiert",
+    "Le téléchargement n’est pas le fichier indiqué par la version ; il n’est donc pas installé",
+    "La descarga no es el archivo que indica la versión, así que no se instala"
+  ],
+  [
+    "The download could not be unpacked: {0}",
+    "Der Download konnte nicht entpackt werden: {0}",
+    "Le téléchargement n’a pas pu être décompressé : {0}",
+    "No se pudo descomprimir la descarga: {0}"
+  ],
+  [
+    "The new version does not start: {0}",
+    "Die neue Version startet nicht: {0}",
+    "La nouvelle version ne démarre pas : {0}",
+    "La nueva versión no se inicia: {0}"
+  ],
+  [
+    "The new version did not report itself as {0}",
+    "Die neue Version meldete sich nicht als {0}",
+    "La nouvelle version ne s’est pas présentée comme {0}",
+    "La nueva versión no se identificó como {0}"
+  ],
+  [
+    "The new app's signature does not match its files",
+    "Die Signatur der neuen App passt nicht zu ihren Dateien",
+    "La signature de la nouvelle app ne correspond pas à ses fichiers",
+    "La firma de la nueva app no coincide con sus archivos"
+  ],
+  [
+    "The download holds no Rigometry.app",
+    "Der Download enthält keine Rigometry.app",
+    "Le téléchargement ne contient pas Rigometry.app",
+    "La descarga no contiene Rigometry.app"
+  ],
+  [
+    "Rigometry cannot replace itself: {0}",
+    "Rigometry kann sich nicht selbst ersetzen: {0}",
+    "Rigometry ne peut pas se remplacer : {0}",
+    "Rigometry no puede sustituirse a sí mismo: {0}"
+  ],
+  [
+    "The new version did not start: {0}",
+    "Die neue Version ist nicht gestartet: {0}",
+    "La nouvelle version n’a pas démarré : {0}",
+    "La nueva versión no se inició: {0}"
+  ],
+  [
+    "Not a release page of Rigometry",
+    "Keine Release-Seite von Rigometry",
+    "Ce n’est pas une page de version de Rigometry",
+    "No es una página de versión de Rigometry"
+  ],
+  [
+    "The update stopped before completion",
+    "Das Update wurde vor dem Abschluss beendet",
+    "La mise à jour s’est arrêtée avant la fin",
+    "La actualización se detuvo antes de terminar"
+  ],
+  [
+    "No folder for the update",
+    "Kein Ordner für das Update",
+    "Aucun dossier pour la mise à jour",
+    "No hay carpeta para la actualización"
+  ],
+  [
+    "No folder for the program",
+    "Kein Ordner für das Programm",
+    "Aucun dossier pour le programme",
+    "No hay carpeta para el programa"
   ]
 ]

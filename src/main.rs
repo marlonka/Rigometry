@@ -7,6 +7,7 @@ mod search;
 mod state;
 mod storage;
 mod ui;
+mod update;
 
 use std::{
     path::PathBuf,
@@ -262,6 +263,13 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         persistence_path: capture_storage.as_ref().map(|dir| dir.path().join("state")),
         ..Default::default()
     };
+    // A version started by an update waits for the one it replaced to exit
+    // and save its settings before eframe reads them.
+    let updated_from = if capture.is_none() {
+        update::after_update()
+    } else {
+        None
+    };
     let capture_failed = Arc::new(AtomicBool::new(false));
     let app_capture_failed = capture_failed.clone();
     eframe::run_native(
@@ -273,6 +281,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 scan,
                 capture,
                 app_capture_failed,
+                updated_from,
             )))
         }),
     )?;
