@@ -1,6 +1,6 @@
 # Dependency license inventory
 
-Generated 2026-10-04 and updated 2026-11-17 from the pinned Cargo.lock using:
+Generated 2026-10-04 and updated 2026-11-25 from the pinned Cargo.lock using:
 
 ```powershell
 cargo metadata --locked --offline --format-version 1 --filter-platform x86_64-pc-windows-msvc
@@ -84,7 +84,7 @@ The Rust standard library is outside Cargo.lock; its [original notices](toolchai
 | [flate2](https://crates.io/crates/flate2/1.1.10) | 1.1.10 | Transitive | MIT OR Apache-2.0 | LICENSE-APACHE, LICENSE-MIT |
 | [foldhash](https://crates.io/crates/foldhash/0.2.0) | 0.2.0 | Transitive | Zlib | LICENSE |
 | [font-types](https://crates.io/crates/font-types/0.11.3) | 0.11.3 | Transitive | MIT OR Apache-2.0 | LICENSE-APACHE, LICENSE-MIT |
-| [form_urlencoded](https://crates.io/crates/form_urlencoded/1.2.2) | 1.2.2 | Transitive | MIT OR Apache-2.0 | LICENSE-APACHE, LICENSE-MIT |
+| [form_urlencoded](https://crates.io/crates/form_urlencoded/1.2.3) | 1.2.3 | Transitive | MIT OR Apache-2.0 | LICENSE-APACHE, LICENSE-MIT |
 | [getrandom](https://crates.io/crates/getrandom/0.3.4) | 0.3.4 | Transitive | MIT OR Apache-2.0 | LICENSE-APACHE, LICENSE-MIT |
 | [getrandom](https://crates.io/crates/getrandom/0.4.3) | 0.4.3 | Transitive | MIT OR Apache-2.0 | LICENSE-APACHE, LICENSE-MIT |
 | [gl_generator](https://crates.io/crates/gl_generator/0.14.0) | 0.14.0 | Transitive | Apache-2.0 | upstream license supplement |
@@ -189,7 +189,7 @@ The Rust standard library is outside Cargo.lock; its [original notices](toolchai
 | [unicase](https://crates.io/crates/unicase/2.9.0) | 2.9.0 | Transitive | MIT OR Apache-2.0 | LICENSE-APACHE, LICENSE-MIT |
 | [unicode-ident](https://crates.io/crates/unicode-ident/1.0.26) | 1.0.26 | Transitive | (MIT OR Apache-2.0) AND Unicode-3.0 | LICENSE-APACHE, LICENSE-MIT, LICENSE-UNICODE |
 | [unicode-segmentation](https://crates.io/crates/unicode-segmentation/1.13.3) | 1.13.3 | Transitive | MIT OR Apache-2.0 | COPYRIGHT, LICENSE-APACHE, LICENSE-MIT |
-| [url](https://crates.io/crates/url/2.5.8) | 2.5.8 | Transitive | MIT OR Apache-2.0 | LICENSE-APACHE, LICENSE-MIT |
+| [url](https://crates.io/crates/url/2.5.9) | 2.5.9 | Transitive | MIT OR Apache-2.0 | LICENSE-APACHE, LICENSE-MIT |
 | [utf8_iter](https://crates.io/crates/utf8_iter/1.0.4) | 1.0.4 | Transitive | Apache-2.0 OR MIT | COPYRIGHT, LICENSE-APACHE, LICENSE-MIT |
 | [uuid](https://crates.io/crates/uuid/1.27.0) | 1.27.0 | Transitive | Apache-2.0 OR MIT | LICENSE-APACHE, LICENSE-MIT |
 | [vello_common](https://crates.io/crates/vello_common/0.0.6) | 0.0.6 | Transitive | Apache-2.0 OR MIT | LICENSE-APACHE, LICENSE-MIT |

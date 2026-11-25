@@ -382,8 +382,8 @@ find-msvc-tools 0.1.14 — LICENSE-APACHE
 Source: https://crates.io/crates/find-msvc-tools/0.1.14
 flate2 1.1.10 — LICENSE-APACHE
 Source: https://crates.io/crates/flate2/1.1.10
-form_urlencoded 1.2.2 — LICENSE-APACHE
-Source: https://crates.io/crates/form_urlencoded/1.2.2
+form_urlencoded 1.2.3 — LICENSE-APACHE
+Source: https://crates.io/crates/form_urlencoded/1.2.3
 glow 0.17.0 — LICENSE-APACHE
 Source: https://crates.io/crates/glow/0.17.0
 hashbrown 0.16.1 — LICENSE-APACHE
@@ -432,8 +432,8 @@ unicase 2.9.0 — LICENSE-APACHE
 Source: https://crates.io/crates/unicase/2.9.0
 unicode-segmentation 1.13.3 — LICENSE-APACHE
 Source: https://crates.io/crates/unicode-segmentation/1.13.3
-url 2.5.8 — LICENSE-APACHE
-Source: https://crates.io/crates/url/2.5.8
+url 2.5.9 — LICENSE-APACHE
+Source: https://crates.io/crates/url/2.5.9
 uuid 1.27.0 — LICENSE-APACHE
 Source: https://crates.io/crates/uuid/1.27.0
 version_check 0.9.5 — LICENSE-APACHE
@@ -3453,8 +3453,8 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 
 ========================================================================
-form_urlencoded 1.2.2 — LICENSE-MIT
-Source: https://crates.io/crates/form_urlencoded/1.2.2
+form_urlencoded 1.2.3 — LICENSE-MIT
+Source: https://crates.io/crates/form_urlencoded/1.2.3
 ========================================================================
 
 Copyright (c) 2013-2016 The rust-url developers
@@ -4342,8 +4342,8 @@ idna 1.1.0 — LICENSE-MIT
 Source: https://crates.io/crates/idna/1.1.0
 percent-encoding 2.3.2 — LICENSE-MIT
 Source: https://crates.io/crates/percent-encoding/2.3.2
-url 2.5.8 — LICENSE-MIT
-Source: https://crates.io/crates/url/2.5.8
+url 2.5.9 — LICENSE-MIT
+Source: https://crates.io/crates/url/2.5.9
 ========================================================================
 
 Copyright (c) 2013-2025 The rust-url developers
