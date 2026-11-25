@@ -6,3 +6,4 @@
 docs/toolchain-notices/rust-1.99.0/COPYRIGHT-library.html -text -whitespace
 # Original license text may contain upstream trailing spaces.
 docs/third-party-licenses.txt -whitespace
+*.ttf -text

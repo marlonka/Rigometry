@@ -434,35 +434,109 @@ mod tests {
         );
     }
 
+    /// The string literal at the start of `source`, if there is one.
+    fn leading_literal(source: &str) -> Option<String> {
+        let source = source.trim_start();
+        if !source.starts_with('"') {
+            return None;
+        }
+        let mut escaped = false;
+        let end = source.char_indices().skip(1).find_map(|(index, ch)| {
+            if escaped {
+                escaped = false;
+                return None;
+            }
+            if ch == '\\' {
+                escaped = true;
+                return None;
+            }
+            (ch == '"').then_some(index)
+        })?;
+        serde_json::from_str(&source[..=end]).ok()
+    }
+
     #[test]
     fn static_interface_labels_have_a_catalog_entry() {
-        // Check the actual presentation call sites, including multiline calls.
+        // Check the actual presentation call sites, including multiline calls:
+        // `tx(ui, "…")` and the components that translate their label.
         // IDs, provider keys and file names intentionally do not use `tx`.
-        for call in include_str!("ui.rs").split("tx(").skip(1) {
-            let Some(source) = call.trim_start().strip_prefix("ui,") else {
-                continue;
-            };
-            let source = source.trim_start();
-            if !source.starts_with('"') {
-                continue;
+        let sources = [
+            include_str!("ui.rs"),
+            include_str!("ui/storage.rs"),
+            include_str!("ui/widgets.rs"),
+            include_str!("ui/platform.rs"),
+        ];
+        let mut keys = vec![];
+        for source in sources {
+            for call in [
+                "tx(",
+                "section_header(",
+                "card_title(",
+                "page_header(",
+                "page_header_with(",
+                "setting_row(",
+                "nav_item(",
+                "metric_chart(",
+                "label: ",
+            ] {
+                for rest in source.split(call).skip(1) {
+                    let rest = rest.trim_start();
+                    let rest = rest.strip_prefix("ui,").unwrap_or(rest);
+                    keys.extend(leading_literal(rest));
+                }
             }
-            let mut escaped = false;
-            let end = source
-                .char_indices()
-                .skip(1)
-                .find_map(|(index, ch)| {
-                    if escaped {
-                        escaped = false;
-                        return None;
+            // Labels translated through a table rather than at the call.
+            if let Some((_, table)) = source.split_once("const TILE_KINDS") {
+                let table = &table[..table.find("];").unwrap()];
+                keys.extend(table.split('"').skip(1).step_by(2).map(str::to_owned));
+            }
+        }
+        assert!(keys.len() > 100, "the scan must find the interface labels");
+        // Composed messages: `td(ui, format!("… {} …"))` needs the template
+        // with numbered arguments, unless it holds no words of its own.
+        let mut templates = 0;
+        for source in sources {
+            for rest in source.split("td(").skip(1) {
+                let Some(rest) = rest.trim_start().strip_prefix("ui,") else {
+                    continue;
+                };
+                let Some(rest) = rest.trim_start().strip_prefix("format!(") else {
+                    continue;
+                };
+                let Some(literal) = leading_literal(rest) else {
+                    continue;
+                };
+                let mut template = String::new();
+                let mut argument = 0;
+                let mut chars = literal.chars().peekable();
+                while let Some(ch) = chars.next() {
+                    if ch == '{' && chars.peek() != Some(&'{') {
+                        for inner in chars.by_ref() {
+                            if inner == '}' {
+                                break;
+                            }
+                        }
+                        template += &format!("{{{argument}}}");
+                        argument += 1;
+                    } else {
+                        template.push(ch);
+                        if matches!(ch, '{' | '}') {
+                            chars.next();
+                        }
                     }
-                    if ch == '\\' {
-                        escaped = true;
-                        return None;
-                    }
-                    (ch == '"').then_some(index)
-                })
-                .unwrap();
-            let key: String = serde_json::from_str(&source[..=end]).unwrap();
+                }
+                let words = template
+                    .split(|ch: char| !ch.is_alphabetic())
+                    .any(|word| word.chars().count() > 2 && !word.contains("0"));
+                templates += 1;
+                assert!(
+                    !words || catalog().contains_key(&template),
+                    "untranslated UI message: {template}"
+                );
+            }
+        }
+        assert!(templates > 30, "the scan must find composed messages");
+        for key in keys {
             assert!(
                 key.is_empty()
                     || ["Windows", "BIOS", "−120 s"].contains(&key.as_str())

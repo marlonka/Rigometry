@@ -1,10 +1,18 @@
+mod platform;
+mod storage;
+mod theme;
+mod widgets;
+
 use crate::{
     i18n::{self, Language, message as td, text as tx},
     model::*,
-    state::{DuplicateRow, Page, Settings, Sort, State, View},
+    state::{Page, Settings, State},
 };
 use eframe::egui::{self, *};
 use egui_extras::{Column, TableBuilder};
+#[cfg(test)]
+use platform::*;
+use platform::{COMMAND_KEY, NO_GPU, PLATFORM_LABEL, elevated};
 use std::{
     path::PathBuf,
     sync::{
@@ -13,20 +21,23 @@ use std::{
     },
     time::{Duration, Instant},
 };
+use theme::{BASE_SCALE, medium, palette, regular, semibold};
+use widgets::*;
 
-const CPU: Color32 = Color32::from_rgb(181, 207, 188);
-const MEMORY: Color32 = Color32::from_rgb(162, 188, 216);
-const GPU: Color32 = Color32::from_rgb(217, 195, 150);
-const BASE_SCALE: f32 = 1.25;
 const CAPTURE_WARMUP: Duration = Duration::from_secs(120);
 const CAPTURE_TIMEOUT: Duration = Duration::from_secs(180);
-fn muted(ui: &Ui) -> Color32 {
-    if ui.visuals().dark_mode {
-        Color32::from_rgb(167, 167, 171)
-    } else {
-        Color32::from_rgb(96, 96, 101)
-    }
-}
+/// Space between the window edge and the content canvas.
+const CANVAS_OUTSET: i8 = 8;
+/// Padding inside the canvas; the right side holds the page scrollbar.
+const CANVAS_PADDING: Margin = Margin {
+    left: 32,
+    right: 14,
+    top: 28,
+    bottom: 6,
+};
+/// The page scrollbar never comes closer than this to the window's right edge.
+#[cfg(test)]
+const PAGE_RIGHT_CLEARANCE: f32 = (CANVAS_OUTSET + CANVAS_PADDING.right) as f32;
 
 pub struct App {
     pub state: State,
@@ -36,15 +47,28 @@ pub struct App {
     capture_pending: Option<PathBuf>,
     capture_worker: Option<std::thread::JoinHandle<Result<(), String>>>,
     capture_failed: Arc<AtomicBool>,
-    map_cache: Vec<(usize, Rect)>,
+    /// Laid-out size-map tiles: entry, rectangle and color index.
+    map_cache: Vec<(usize, Rect, usize)>,
     map_key: Option<(u64, Vec2)>,
     /// Where the map was when `map_cache` was laid out.
     map_origin: Pos2,
-    cpu_tab: usize,
+    /// Which tile kinds the map shows, for the map revision it was counted at.
+    map_kinds: (u64, [bool; 7]),
+    cpu_tab: CpuTab,
     window_override: Option<Vec2>,
     /// The window was closed during an update; it closes when that ends.
     close_after_update: bool,
+    /// The sidebar's update notice was clicked: show the Updates section.
+    reveal_updates: bool,
 }
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum CpuTab {
+    Processor,
+    Memory,
+    Mainboard,
+}
+
 impl App {
     pub fn new(
         cc: &eframe::CreationContext<'_>,
@@ -94,49 +118,13 @@ impl App {
         }
         settings.scale = finite_scale(settings.scale);
         let args: Vec<String> = std::env::args().collect();
-        if let Some(value) = args.windows(2).find(|a| a[0] == "--theme") {
-            settings.theme = value[1].clone();
+        if let Some(value) = crate::argument(&args, "--theme") {
+            settings.theme = value;
         }
-        if let Some(value) = args
-            .windows(2)
-            .find(|a| a[0] == "--scale")
-            .and_then(|a| a[1].parse::<f32>().ok())
+        if let Some(value) =
+            crate::argument(&args, "--scale").and_then(|value| value.parse::<f32>().ok())
         {
             settings.scale = finite_scale(value);
-        }
-        let mut fonts = FontDefinitions::default();
-        let windows_fonts = std::env::var_os("SystemRoot")
-            .map(|root| PathBuf::from(root).join("Fonts"))
-            .unwrap_or_else(|| PathBuf::from("C:/Windows/Fonts"));
-        if let Ok(font) = std::fs::read(windows_fonts.join("segoeui.ttf")) {
-            fonts
-                .font_data
-                .insert("Segoe UI".into(), FontData::from_owned(font).into());
-            fonts
-                .families
-                .get_mut(&FontFamily::Proportional)
-                .unwrap()
-                .insert(0, "Segoe UI".into());
-        }
-        // Use installed system glyphs for CJK file names without redistributing
-        // fonts. Each covers different scripts (Hangul is only in the Korean
-        // fonts), so every one found is added as a fallback.
-        for candidate in [
-            windows_fonts.join("msgothic.ttc"),
-            windows_fonts.join("msyh.ttc"),
-            windows_fonts.join("malgun.ttf"),
-            PathBuf::from("/System/Library/Fonts/Hiragino Sans GB.ttc"),
-            PathBuf::from("/System/Library/Fonts/AppleSDGothicNeo.ttc"),
-        ] {
-            if let Ok(font) = std::fs::read(&candidate) {
-                let name = candidate.to_string_lossy().into_owned();
-                fonts
-                    .font_data
-                    .insert(name.clone(), FontData::from_owned(font).into());
-                for family in [FontFamily::Proportional, FontFamily::Monospace] {
-                    fonts.families.get_mut(&family).unwrap().push(name.clone());
-                }
-            }
         }
         if let Some(value) =
             crate::argument(&args, "--language").and_then(|code| Language::parse(&code))
@@ -144,8 +132,7 @@ impl App {
             settings.language = value;
         }
         i18n::set_context(&cc.egui_ctx, settings.language);
-        cc.egui_ctx.set_fonts(fonts);
-        apply_style(&cc.egui_ctx, &settings);
+        theme::apply(&cc.egui_ctx, &settings);
         let mut state = create_state(settings, cc.egui_ctx.clone());
         if let Some(path) = scan {
             state.settings.path = path;
@@ -168,101 +155,106 @@ impl App {
             map_cache: vec![],
             map_key: None,
             map_origin: Pos2::ZERO,
-            cpu_tab: 0,
+            map_kinds: (u64::MAX, [false; 7]),
+            cpu_tab: CpuTab::Processor,
             close_after_update: false,
+            reveal_updates: false,
         }
     }
+
     fn sidebar(&mut self, ui: &mut Ui) {
-        let compact = ui.available_height() < 580.;
+        let p = palette(ui);
+        let compact = ui.available_height() < 560.;
+        // Below this even the update notice gives way to navigation.
         let dense = ui.available_height() < 430.;
-        ui.add_space(if dense { 0. } else { 10. });
+        let page = self.state.settings.page;
         ui.horizontal(|ui| {
-            let (r, _) = ui.allocate_exact_size(vec2(30., 30.), Sense::hover());
-            crate::branding::paint(ui.painter(), r);
-            ui.label(RichText::new("Rigometry").size(19.).strong());
+            ui.add_space(6.);
+            let (rect, _) = ui.allocate_exact_size(vec2(28., 28.), Sense::hover());
+            crate::branding::paint(ui.painter(), rect);
+            ui.add_space(2.);
+            ui.label(RichText::new("Rigometry").font(semibold(15.)));
         });
-        ui.add_space(if dense {
-            8.
-        } else if compact {
-            18.
-        } else {
-            34.
-        });
-        for (page, name, key, kind) in [
-            (Page::Overview, "Overview", "1", 0),
-            (Page::Cpu, "CPU & Memory", "2", 1),
-            (Page::Gpu, "GPU", "3", 2),
-            (Page::Storage, "Storage", "4", 3),
+        ui.add_space(if compact { 12. } else { 24. });
+        ui.spacing_mut().item_spacing.y = 2.;
+        for (target, label, key, icon) in [
+            (Page::Overview, "Overview", "1", Icon::Overview),
+            (Page::Cpu, "CPU & Memory", "2", Icon::Cpu),
+            (Page::Gpu, "GPU", "3", Icon::Gpu),
+            (Page::Storage, "Storage", "4", Icon::Storage),
         ] {
-            if navigation(ui, name, key, self.state.settings.page == page, kind) {
-                self.state.settings.page = page;
+            let shortcut = format!("{}+{key}", tx(ui, COMMAND_KEY));
+            if nav_item(ui, label, Some((key, &shortcut)), page == target, icon) {
+                self.state.settings.page = target;
             }
-            ui.add_space(if dense { 2. } else { 6. });
         }
         ui.with_layout(Layout::bottom_up(Align::Min), |ui| {
-            if !dense {
-                ui.add_space(8.);
-                caption(ui, PLATFORM_LABEL);
-                // A new version, unless the user chose to skip it.
-                let available = self.state.updates.as_ref().and_then(|updates| {
-                    updates
-                        .offered()
-                        .filter(|r| updates.record.skipped.as_deref() != Some(&r.version))
-                        .map(|r| r.version.clone())
+            ui.spacing_mut().item_spacing.y = 2.;
+            if !compact {
+                ui.horizontal(|ui| {
+                    ui.add_space(10.);
+                    caption(ui, PLATFORM_LABEL);
                 });
-                if let Some(version) = available {
-                    let text = td(ui, format!("Update {version} available"));
-                    if ui
-                        .add(
-                            Button::new(RichText::new(text).size(12.).color(accent(ui, GPU)))
-                                .frame(false),
-                        )
-                        .clicked()
-                    {
-                        self.state.settings.page = Page::Settings;
-                    }
+                if let Some((status, warning)) = self.hardware_status(ui) {
+                    let color = if warning { p.warn } else { p.faint };
+                    ui.horizontal(|ui| {
+                        ui.add_space(10.);
+                        ui.label(RichText::new(status).font(regular(12.5)).color(color));
+                    });
                 }
-                ui.add_space(16.);
+                ui.add_space(10.);
             }
-            if navigation(
-                ui,
-                "Settings",
-                "",
-                self.state.settings.page == Page::Settings,
-                5,
-            ) {
+            if nav_item(ui, "Settings", None, page == Page::Settings, Icon::Settings) {
                 self.state.settings.page = Page::Settings;
             }
-            ui.add_space(6.);
-            if navigation(
+            if nav_item(
                 ui,
                 "Diagnostics",
-                "",
-                self.state.settings.page == Page::Diagnostics,
-                4,
+                None,
+                page == Page::Diagnostics,
+                Icon::Diagnostics,
             ) {
                 self.state.settings.page = Page::Diagnostics;
             }
-            if compact {
-                return;
-            }
-            if let Some(s) = self.state.history.back() {
-                if now_ms().saturating_sub(s.timestamp_ms) > 5000 {
-                    ui.add_space(22.);
-                    ui.label(
-                        RichText::new(tx(ui, "Telemetry stale"))
-                            .size(12.)
-                            .color(accent(ui, GPU)),
-                    );
+            if !dense && let Some(version) = self.offered_update() {
+                ui.add_space(8.);
+                let text = td(ui, format!("Update {version} available"));
+                let button = Button::new(RichText::new(text).font(medium(13.)).color(p.text))
+                    .fill(theme::mix(p.window, p.accent, 0.16))
+                    .stroke(Stroke::new(1.0_f32, theme::mix(p.window, p.accent, 0.4)))
+                    .corner_radius(8)
+                    .min_size(vec2(ui.available_width(), 32.));
+                if ui.add(button).clicked() {
+                    self.state.settings.page = Page::Settings;
+                    self.reveal_updates = true;
                 }
-            } else {
-                ui.add_space(22.);
-                caption(ui, tx(ui, "Reading hardware…"));
             }
         });
     }
+
+    /// A new version, unless the user chose to skip it.
+    fn offered_update(&self) -> Option<String> {
+        let updates = self.state.updates.as_ref()?;
+        updates
+            .offered()
+            .filter(|r| updates.record.skipped.as_deref() != Some(&r.version))
+            .map(|r| r.version.clone())
+    }
+
+    /// Why live readings are missing or old, if they are, and whether that
+    /// is a problem rather than startup.
+    fn hardware_status(&self, ui: &Ui) -> Option<(String, bool)> {
+        match self.state.history.back() {
+            Some(sample) if now_ms().saturating_sub(sample.timestamp_ms) > 5000 => {
+                Some((tx(ui, "Telemetry stale"), true))
+            }
+            Some(_) => None,
+            None => Some((tx(ui, "Reading hardware…"), false)),
+        }
+    }
+
     fn overview(&mut self, ui: &mut Ui) {
-        header(ui, "Overview");
+        page_header(ui, "Overview", None);
         let Some(inv) = self.state.inventory.clone() else {
             loading(ui, &self.state);
             return;
@@ -274,1881 +266,681 @@ impl App {
             .filter(|a| a.vendor_id != 0x1414)
             .map(|a| a.name.clone())
             .collect::<Vec<_>>()
-            .join(" / ");
-        ui.add_space(8.);
-        let mut pc = |ui: &mut Ui| {
-            section(ui, "This PC", |ui| {
-                summary_row(
-                    ui,
-                    "Processor",
-                    &cpu,
-                    Some((Page::Cpu, &mut self.state.settings.page)),
-                );
-                summary_row(
-                    ui,
-                    "Graphics",
-                    if gpu.is_empty() {
-                        "No graphics adapter reported"
-                    } else {
-                        &gpu
-                    },
-                    Some((Page::Gpu, &mut self.state.settings.page)),
-                );
-                summary_row(
-                    ui,
-                    "Memory",
-                    &field_value(ui, &inv.memory, "Installed capacity"),
-                    Some((Page::Cpu, &mut self.state.settings.page)),
-                );
-            });
-        };
-        let system = |ui: &mut Ui| {
-            section(ui, "System", |ui| {
-                summary_row(
-                    ui,
-                    "Motherboard",
-                    &format!(
-                        "{} {}",
-                        field_value(ui, &inv.motherboard, "Manufacturer"),
-                        field_value(ui, &inv.motherboard, "Model")
-                    ),
-                    None,
-                );
-                let os = inv
-                    .os
-                    .iter()
-                    .filter_map(|f| f.value.as_ref())
-                    .take(2)
-                    .cloned()
-                    .collect::<Vec<_>>()
-                    .join(" · ");
-                summary_row(ui, crate::model::OS_NAME, &os, None);
-                summary_row(
-                    ui,
-                    "BIOS",
-                    &field_value(ui, &inv.motherboard, "BIOS version"),
-                    None,
-                );
-            });
-        };
-        if ui.available_width() < 680. {
-            pc(ui);
-            ui.add_space(18.);
-            system(ui);
+            .join("\n");
+        let os = inv
+            .os
+            .iter()
+            .filter_map(|f| f.value.as_ref())
+            .take(2)
+            .cloned()
+            .collect::<Vec<_>>()
+            .join(" · ");
+        let gpu = if gpu.is_empty() {
+            tx(ui, "No graphics adapter reported")
         } else {
-            ui.columns(2, |cols| {
-                pc(&mut cols[0]);
-                system(&mut cols[1]);
-            });
-        }
-        ui.add_space(26.);
-        ui.horizontal(|ui| {
-            ui.label(RichText::new(tx(ui, "Live activity")).size(18.));
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                ui.label(
-                    RichText::new(tx(ui, "120 s window"))
-                        .color(muted(ui))
-                        .size(12.),
-                );
+            gpu
+        };
+        let memory = field_value(ui, &inv.memory, "Installed capacity");
+        let board = motherboard_name(ui, &inv.motherboard);
+        let bios = field_value(ui, &inv.motherboard, "BIOS version");
+        section_header(ui, "Live activity", |ui| {
+            caption(ui, tx(ui, "120 s window"));
+        });
+        let cpu_points = self.series(|s| s.cpu_usage.value);
+        let memory_points = self.series(memory_percent);
+        let gpu_id = inv
+            .adapters
+            .iter()
+            .find(|a| a.vendor_id != 0x1414)
+            .map(|a| a.id.as_str())
+            .unwrap_or("");
+        let gpu_points =
+            self.series(|s| gpu_reading(s, gpu_id, "Utilization").and_then(|r| r.value));
+        let temperature = self
+            .state
+            .history
+            .back()
+            .and_then(|s| gpu_reading(s, gpu_id, "Temperature"));
+        // One instrument strip: three readings side by side on one surface.
+        card_with(ui, Margin::symmetric(20, 18), |ui| {
+            // Wide enough for "100.0 %" beside the GPU temperature.
+            divided_columns(ui, 3, 250., |ui, index| {
+                let (label, points, series, secondary) = match index {
+                    0 => ("CPU", &cpu_points, Series::Cpu, None),
+                    1 => ("Memory", &memory_points, Series::Memory, None),
+                    _ => (
+                        "GPU",
+                        &gpu_points,
+                        Series::Gpu,
+                        Some(("Temperature", temperature)),
+                    ),
+                };
+                MetricChart {
+                    label,
+                    points,
+                    unit: "%",
+                    max: 100.,
+                    series,
+                    plot_height: 64.,
+                    secondary,
+                    axis: false,
+                }
+                .content(ui);
             });
         });
-        ui.add_space(12.);
-        let cpu_points: Vec<_> = self
-            .state
-            .history
-            .iter()
-            .map(|s| (s.timestamp_ms, s.cpu_usage.value))
-            .collect();
-        let memory_points: Vec<_> = self
-            .state
-            .history
-            .iter()
-            .map(|s| (s.timestamp_ms, memory_percent(s)))
-            .collect();
-        let primary_gpu = inv.adapters.iter().find(|a| a.vendor_id != 0x1414);
-        let gpu_id = primary_gpu.map(|a| a.id.as_str()).unwrap_or("");
-        let gpu_points: Vec<_> = self
-            .state
-            .history
-            .iter()
-            .map(|s| {
-                (
-                    s.timestamp_ms,
-                    gpu_reading(s, gpu_id, "Utilization").and_then(|r| r.value),
-                )
-            })
-            .collect();
-        let gpu_chart = |ui: &mut Ui| {
-            let reading = self
-                .state
-                .history
-                .back()
-                .and_then(|s| gpu_reading(s, gpu_id, "Temperature"));
-            MetricChart {
-                label: "GPU",
-                points: &gpu_points,
-                unit: "%",
-                max: 100.,
-                color: GPU,
-                height: 166.,
-                secondary: Some(("Temperature", reading)),
-            }
-            .show(ui);
-        };
-        if ui.available_width() < 780. {
-            metric_chart(ui, "CPU", &cpu_points, "%", 100., CPU, 166.);
-            ui.add_space(12.);
-            metric_chart(ui, "Memory", &memory_points, "%", 100., MEMORY, 166.);
-            ui.add_space(12.);
-            gpu_chart(ui);
-        } else {
-            ui.columns(3, |cols| {
-                metric_chart(&mut cols[0], "CPU", &cpu_points, "%", 100., CPU, 166.);
-                metric_chart(
-                    &mut cols[1],
-                    "Memory",
-                    &memory_points,
-                    "%",
-                    100.,
-                    MEMORY,
-                    166.,
-                );
-                gpu_chart(&mut cols[2]);
-            });
-        }
-        ui.add_space(24.);
-        ui.horizontal(|ui| {
-            ui.label(RichText::new(tx(ui, "Drives")).size(18.));
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                if ui.button(tx(ui, "Scan folder…")).clicked() {
-                    self.state.settings.page = Page::Storage;
-                    self.state.pick_folder();
+        ui.add_space(SECTION_GAP);
+        let page = &mut self.state.settings.page;
+        card_with(ui, Margin::symmetric(20, 18), |ui| {
+            divided_columns(ui, 2, 280., |ui, index| {
+                if index == 0 {
+                    card_title(ui, "This PC");
+                    let width = label_column(
+                        ui,
+                        ["Processor", "Graphics", "Memory"].map(|l| tx(ui, l)),
+                        80.,
+                        140.,
+                    );
+                    summary_row(ui, "Processor", &cpu, width, Some((Page::Cpu, &mut *page)));
+                    summary_row(ui, "Graphics", &gpu, width, Some((Page::Gpu, &mut *page)));
+                    summary_row(ui, "Memory", &memory, width, Some((Page::Cpu, &mut *page)));
+                } else {
+                    card_title(ui, "System");
+                    let width = label_column(
+                        ui,
+                        ["Motherboard", crate::model::OS_NAME, "BIOS"].map(|l| tx(ui, l)),
+                        80.,
+                        140.,
+                    );
+                    summary_row(ui, "Motherboard", &board, width, None);
+                    summary_row(ui, crate::model::OS_NAME, &os, width, None);
+                    summary_row(ui, "BIOS", &bios, width, None);
                 }
             });
         });
-        ui.add_space(10.);
-
+        ui.add_space(SECTION_GAP);
+        section_header(ui, "Drives", |ui| {
+            if ui.button(tx(ui, "Scan folder…")).clicked() {
+                self.state.settings.page = Page::Storage;
+                self.state.pick_folder();
+            }
+        });
         let mut drives = inv.drives.clone();
         drives.sort_by(|a, b| a.mount.cmp(&b.mount));
-        panel(ui, |ui| {
-            let scan_width = label_width(ui, &tx(ui, "Scan"), 76.);
-            if ui.available_width() < 460. {
-                for (index, drive) in drives.iter().enumerate() {
-                    if index > 0 {
-                        ui.separator();
-                    }
-                    let used = drive.total_bytes.saturating_sub(drive.free_bytes);
-                    ui.horizontal(|ui| {
-                        let name_width = (ui.available_width() - scan_width - 10.).max(0.);
-                        ui.add_sized(
-                            [name_width, 31.],
-                            Label::new(format!("{}  {}", drive.mount, drive.name)).truncate(),
-                        )
-                        .on_hover_text(&drive.name);
-                        if ui
-                            .add_sized([scan_width, 31.], Button::new(tx(ui, "Scan")))
-                            .clicked()
-                        {
-                            self.state.settings.path = drive.mount.clone();
-                            self.state.settings.page = Page::Storage;
-                            self.state.start_scan();
-                        }
-                    });
-                    caption(
-                        ui,
-                        td(
-                            ui,
-                            format!(
-                                "{} · {}",
-                                drive.file_system,
-                                ui_bytes(ui, drive.total_bytes)
-                            ),
-                        ),
-                    );
-                    ui.label(
-                        RichText::new(td(
-                            ui,
-                            format!(
-                                "{} used · {} free",
-                                ui_bytes(ui, used),
-                                ui_bytes(ui, drive.free_bytes)
-                            ),
-                        ))
-                        .size(12.)
-                        .monospace(),
-                    );
-                    let ratio = if drive.total_bytes > 0 {
-                        used as f32 / drive.total_bytes as f32
-                    } else {
-                        0.
-                    };
-                    ui.add(
-                        ProgressBar::new(ratio)
-                            .desired_width(ui.available_width())
-                            .desired_height(4.)
-                            .fill(Color32::from_gray(155)),
-                    );
-                    ui.add_space(8.);
+        let mut scan = None;
+        card_with(ui, Margin::symmetric(18, 8), |ui| {
+            if drives.is_empty() {
+                ui.add_space(8.);
+                caption(ui, tx(ui, "Unavailable"));
+                ui.add_space(8.);
+            }
+            for (index, drive) in drives.iter().enumerate() {
+                if index > 0 {
+                    divider(ui);
                 }
-                return;
+                if drive_row(ui, drive) {
+                    scan = Some(drive.mount.clone());
+                }
             }
-            let compact = ui.available_width() < 680.;
-            let drive_width = if compact { 106. } else { 170. };
-            let free_width = if compact { 94. } else { 102. };
-            let mut table = TableBuilder::new(ui)
-                .id_salt(("drive-overview", compact))
-                .vscroll(false)
-                .vertical_scroll_offset(0.)
-                .scroll_bar_visibility(scroll_area::ScrollBarVisibility::AlwaysHidden)
-                .cell_layout(Layout::left_to_right(Align::Center))
-                .column(Column::exact(drive_width))
-                .column(Column::remainder().at_least(72.))
-                .column(Column::exact(free_width));
-            if !compact {
-                table = table.column(Column::exact(102.));
-            }
-            table
-                .column(Column::exact(scan_width))
-                .header(28., |mut row| {
-                    for label in if compact {
-                        vec!["Drive", "Used", "Free", ""]
-                    } else {
-                        vec!["Drive", "Used", "Free", "Capacity", ""]
-                    } {
-                        row.col(|ui| {
-                            caption(ui, tx(ui, label));
-                        });
-                    }
-                })
-                .body(|mut body| {
-                    for drive in &drives {
-                        let used = drive.total_bytes.saturating_sub(drive.free_bytes);
-                        body.row(62., |mut row| {
-                            row.col(|ui| {
-                                ui.vertical(|ui| {
-                                    ui.add(
-                                        Label::new(format!("{}  {}", drive.mount, drive.name))
-                                            .truncate(),
-                                    )
-                                    .on_hover_text(td(
-                                        ui,
-                                        format!(
-                                            "{}\nCapacity: {}\n{}",
-                                            drive.name,
-                                            ui_bytes(ui, drive.total_bytes),
-                                            drive.mount
-                                        ),
-                                    ));
-                                    ui.label(
-                                        RichText::new(&drive.file_system)
-                                            .size(11.)
-                                            .color(muted(ui)),
-                                    );
-                                });
-                            });
-                            row.col(|ui| {
-                                let width = ui.available_width();
-                                ui.allocate_ui_with_layout(
-                                    vec2(width, 40.),
-                                    Layout::top_down(Align::Min),
-                                    |ui| {
-                                        ui.label(
-                                            RichText::new(ui_bytes(ui, used)).size(13.).monospace(),
-                                        );
-                                        let ratio = if drive.total_bytes > 0 {
-                                            used as f32 / drive.total_bytes as f32
-                                        } else {
-                                            0.
-                                        };
-                                        ui.add(
-                                            ProgressBar::new(ratio)
-                                                .desired_height(4.)
-                                                .desired_width(width)
-                                                .fill(Color32::from_gray(155)),
-                                        );
-                                    },
-                                );
-                            });
-                            row.col(|ui| {
-                                numeric_value(
-                                    ui,
-                                    &ui_bytes(ui, drive.free_bytes),
-                                    free_width - 4.,
-                                    12.,
-                                );
-                            });
-                            if !compact {
-                                row.col(|ui| {
-                                    numeric_value(ui, &ui_bytes(ui, drive.total_bytes), 98., 12.);
-                                });
-                            }
-                            row.col(|ui| {
-                                if ui
-                                    .add_sized([scan_width - 4., 31.], Button::new(tx(ui, "Scan")))
-                                    .clicked()
-                                {
-                                    self.state.settings.path = drive.mount.clone();
-                                    self.state.settings.page = Page::Storage;
-                                    self.state.start_scan();
-                                }
-                            });
-                        });
-                    }
-                });
         });
-        ui.add_space(8.);
+        if let Some(path) = scan {
+            self.state.settings.path = path;
+            self.state.settings.page = Page::Storage;
+            self.state.start_scan();
+        }
+        ui.add_space(10.);
         caption(
             ui,
-            "Drive space is a volume snapshot; scan totals exclude filesystem overhead.",
+            tx(
+                ui,
+                "Drive space is a volume snapshot; scan totals exclude filesystem overhead.",
+            ),
         );
+        ui.add_space(SECTION_GAP);
+    }
+
+    /// One value per retained sample, `None` where it was missing.
+    fn series(&self, value: impl Fn(&Telemetry) -> Option<f64>) -> Vec<(u64, Option<f64>)> {
+        self.state
+            .history
+            .iter()
+            .map(|s| (s.timestamp_ms, value(s)))
+            .collect()
     }
 
     fn cpu(&mut self, ui: &mut Ui) {
-        header(ui, "CPU & Memory");
         let Some(inv) = self.state.inventory.clone() else {
+            page_header(ui, "CPU & Memory", None);
             loading(ui, &self.state);
             return;
         };
-        ui.label(RichText::new(field_value(ui, &inv.cpu, "Model")).size(19.));
-        ui.add_space(16.);
-        let cpu_points: Vec<_> = self
-            .state
-            .history
-            .iter()
-            .map(|s| (s.timestamp_ms, s.cpu_usage.value))
-            .collect();
-        let mem_points: Vec<_> = self
-            .state
-            .history
-            .iter()
-            .map(|s| (s.timestamp_ms, memory_percent(s)))
-            .collect();
-        if ui.available_width() < 600. {
-            metric_chart(ui, "CPU utilization", &cpu_points, "%", 100., CPU, 142.);
-            ui.add_space(12.);
-            metric_chart(
-                ui,
-                "Memory utilization",
-                &mem_points,
-                "%",
-                100.,
-                MEMORY,
-                142.,
-            );
-        } else {
-            ui.columns(2, |cols| {
+        let model = field_value(ui, &inv.cpu, "Model");
+        page_header(ui, "CPU & Memory", Some(&model));
+        let cpu_points = self.series(|s| s.cpu_usage.value);
+        let memory_points = self.series(memory_percent);
+        columns(ui, 2, 260., |ui, index| {
+            if index == 0 {
                 metric_chart(
-                    &mut cols[0],
+                    ui,
                     "CPU utilization",
                     &cpu_points,
                     "%",
                     100.,
-                    CPU,
-                    142.,
+                    Series::Cpu,
+                    96.,
                 );
+            } else {
                 metric_chart(
-                    &mut cols[1],
+                    ui,
                     "Memory utilization",
-                    &mem_points,
+                    &memory_points,
                     "%",
                     100.,
-                    MEMORY,
-                    142.,
+                    Series::Memory,
+                    96.,
                 );
-            });
-        }
-        ui.add_space(22.);
-        ui.horizontal_wrapped(|ui| {
-            for (id, name) in ["Processor", "Memory", "Mainboard"].iter().enumerate() {
-                if ui
-                    .add_sized(
-                        [label_width(ui, &tx(ui, name), 104.), 34.],
-                        Button::new(tx(ui, *name))
-                            .selected(self.cpu_tab == id)
-                            .frame(self.cpu_tab == id),
-                    )
-                    .clicked()
-                {
-                    self.cpu_tab = id;
-                }
             }
         });
+        ui.add_space(SECTION_GAP);
+        if let Some(tab) = segmented(
+            ui,
+            "cpu-tab",
+            self.cpu_tab,
+            &[
+                (CpuTab::Processor, "Processor"),
+                (CpuTab::Memory, "Memory"),
+                (CpuTab::Mainboard, "Mainboard"),
+            ],
+        ) {
+            self.cpu_tab = tab;
+        }
         ui.add_space(14.);
         match self.cpu_tab {
-            0 => {
-                let processor = |ui: &mut Ui| {
-                    panel(ui, |ui| {
-                        section(ui, "Processor", |ui| {
-                            let primary: Vec<_> = inv
-                                .cpu
-                                .iter()
-                                .filter(|f| {
-                                    f.state == Availability::Valid
-                                        && ![
-                                            "Model",
-                                            "Instruction sets (hardware)",
-                                            "Temperature",
-                                            "Core voltage",
-                                            "Package power",
-                                        ]
-                                        .contains(&f.label.as_str())
-                                })
-                                .cloned()
-                                .collect();
-                            field_table(ui, "cpu-fields", &primary);
-                        });
-                        folding(ui, tx(ui, "Instruction sets & sensor availability")).show(
-                            ui,
-                            |ui| {
-                                let fields: Vec<_> = inv
-                                    .cpu
-                                    .iter()
-                                    .filter(|f| {
-                                        f.state != Availability::Valid
-                                            || [
-                                                "Instruction sets (hardware)",
-                                                "Temperature",
-                                                "Core voltage",
-                                                "Package power",
-                                            ]
-                                            .contains(&f.label.as_str())
-                                    })
-                                    .cloned()
-                                    .collect();
-                                field_table(ui, "cpu-extra", &fields);
-                            },
-                        );
-                    });
-                };
-                let activity = |ui: &mut Ui| {
-                    panel(ui, |ui| {
-                        ui.label(RichText::new(tx(ui, "Logical processors")).size(16.));
-                        ui.add_space(15.);
-                        if let Some(sample) = self.state.history.back() {
-                            let columns = if ui.available_width() > 390. { 4 } else { 2 };
-                            let cell_width = (ui.available_width() - (columns - 1) as f32 * 14.)
-                                / columns as f32;
-                            Grid::new("core-grid")
-                                .num_columns(columns)
-                                .spacing(vec2(14., 15.))
-                                .show(ui, |ui| {
-                                    for (i, r) in sample.per_core_usage.iter().enumerate() {
-                                        ui.allocate_ui_with_layout(
-                                            vec2(cell_width, 44.),
-                                            Layout::top_down(Align::Min),
-                                            |ui| {
-                                                ui.set_max_width(cell_width);
-                                                let (rect, response) = ui.allocate_exact_size(
-                                                    vec2(cell_width, 22.),
-                                                    Sense::hover(),
-                                                );
-                                                ui.painter().text(
-                                                    rect.left_center(),
-                                                    Align2::LEFT_CENTER,
-                                                    format!("CPU {i:02}"),
-                                                    FontId::proportional(11.),
-                                                    muted(ui),
-                                                );
-                                                let value = if r.state == Availability::Valid {
-                                                    r.value.map(|v| format!("{v:.0}%"))
-                                                } else {
-                                                    None
-                                                }
-                                                .unwrap_or_else(|| {
-                                                    if r.state == Availability::Stale {
-                                                        tx(ui, "Stale")
-                                                    } else {
-                                                        "—".into()
-                                                    }
-                                                });
-                                                ui.painter().text(
-                                                    rect.right_center(),
-                                                    Align2::RIGHT_CENTER,
-                                                    &value,
-                                                    FontId::monospace(12.),
-                                                    ui.visuals().text_color(),
-                                                );
-                                                response.widget_info(|| {
-                                                    WidgetInfo::labeled(
-                                                        WidgetType::Label,
-                                                        true,
-                                                        format!("CPU {i:02}: {value}"),
-                                                    )
-                                                });
-                                                if let Some(value) = r.value
-                                                    && r.state == Availability::Valid
-                                                {
-                                                    let display =
-                                                        if self.state.settings.reduce_motion {
-                                                            value as f32 / 100.
-                                                        } else {
-                                                            ui.ctx().animate_value_with_time(
-                                                                Id::new(("core", i)),
-                                                                value as f32 / 100.,
-                                                                0.16,
-                                                            )
-                                                        };
-                                                    ui.add(
-                                                        ProgressBar::new(display)
-                                                            .desired_width(cell_width)
-                                                            .desired_height(4.)
-                                                            .fill(CPU),
-                                                    );
-                                                }
-                                            },
-                                        );
-                                        if (i + 1) % columns == 0 {
-                                            ui.end_row();
-                                        }
-                                    }
-                                });
-                            ui.add_space(18.);
-                            ui.separator();
-                            ui.add_space(12.);
-                            reading_row(ui, "OS-reported clock", &sample.cpu_frequency);
-                        } else {
-                            ui.label(tx(ui, "Waiting for processor samples…"));
-                        }
-                    });
-                };
-                if ui.available_width() < 680. {
-                    processor(ui);
-                    ui.add_space(16.);
-                    activity(ui);
-                } else {
-                    ui.columns(2, |cols| {
-                        processor(&mut cols[0]);
-                        activity(&mut cols[1]);
-                    });
-                }
-            }
-            1 => {
-                panel(ui, |ui| {
-                    ui.horizontal(|ui| {
-                        ui.label(
-                            RichText::new(field_value(ui, &inv.memory, "Installed capacity"))
-                                .size(24.),
-                        );
-                        ui.label(RichText::new(tx(ui, "installed")).color(muted(ui)));
-                    });
-                    if let Some(sample) = self.state.history.back() {
-                        if sample.memory_used.state == Availability::Valid
-                            && sample.memory_total.state == Availability::Valid
-                            && let (Some(used), Some(total)) =
-                                (sample.memory_used.value, sample.memory_total.value)
-                        {
-                            ui.label(
-                                RichText::new(td(
-                                    ui,
-                                    format!(
-                                        "{} in use · {} available to the system",
-                                        ui_bytes(ui, used as u64),
-                                        ui_bytes(ui, total as u64)
-                                    ),
-                                ))
-                                .color(muted(ui)),
-                            );
-                        } else {
-                            ui.label(td(
-                                ui,
-                                format!(
-                                    "Memory readings: {}",
-                                    tx(
-                                        ui,
-                                        availability(
-                                            if sample.memory_used.state != Availability::Valid {
-                                                &sample.memory_used.state
-                                            } else {
-                                                &sample.memory_total.state
-                                            }
-                                        )
-                                    )
-                                ),
-                            ));
-                        }
-                    }
-                });
-                ui.add_space(16.);
-                let module_count = inv
-                    .memory
-                    .iter()
-                    .filter(|f| f.label.ends_with(" capacity") && per_module(&f.label))
-                    .count();
-                let module = |ui: &mut Ui, n: usize| {
-                    panel(ui, |ui| {
-                        ui.label(RichText::new(td(ui, format!("Module {n}"))).size(16.));
-                        ui.add_space(12.);
-                        let prefix = format!("Module {n} ");
-                        let fields: Vec<_> = inv
-                            .memory
-                            .iter()
-                            .filter(|f| f.label.starts_with(&prefix))
-                            .map(|f| {
-                                let mut f = f.clone();
-                                f.label = f.label[prefix.len()..].to_string();
-                                if let Some(first) = f.label.get_mut(0..1) {
-                                    first.make_ascii_uppercase();
-                                }
-                                f
-                            })
-                            .collect();
-                        field_table(ui, &format!("dimm{n}"), &fields);
-                    });
-                };
-                if ui.available_width() < 680. {
-                    for n in 1..=module_count {
-                        module(ui, n);
-                        ui.add_space(16.);
-                    }
-                } else {
-                    for pair in (0..module_count).step_by(2) {
-                        ui.columns(2, |cols| {
-                            for (j, col) in cols.iter_mut().enumerate() {
-                                let n = pair + j + 1;
-                                if n <= module_count {
-                                    module(col, n);
-                                }
-                            }
-                        });
-                        ui.add_space(16.);
-                    }
-                }
-                folding(ui, tx(ui, "Channel mode, timings & profiles")).show(ui, |ui| {
-                    let fields: Vec<_> = inv
-                        .memory
-                        .iter()
-                        .filter(|f| !per_module(&f.label) && f.label != "Installed capacity")
-                        .cloned()
-                        .collect();
-                    field_table(ui, "memory-extra", &fields);
-                });
-            }
-            _ => {
-                panel(ui, |ui| {
-                    field_table(ui, "board-fields", &inv.motherboard);
-                });
+            CpuTab::Processor => self.processor_tab(ui, &inv),
+            CpuTab::Memory => self.memory_tab(ui, &inv),
+            CpuTab::Mainboard => {
+                card(ui, |ui| field_table(ui, "board-fields", &inv.motherboard));
             }
         }
+        ui.add_space(SECTION_GAP);
     }
+
+    fn processor_tab(&self, ui: &mut Ui, inv: &Inventory) {
+        const DETAILS: [&str; 4] = [
+            "Instruction sets (hardware)",
+            "Temperature",
+            "Core voltage",
+            "Package power",
+        ];
+        let p = palette(ui);
+        columns(ui, 2, 320., |ui, index| {
+            if index == 0 {
+                card(ui, |ui| {
+                    card_title(ui, "Processor");
+                    let primary: Vec<_> = inv
+                        .cpu
+                        .iter()
+                        .filter(|f| {
+                            f.state == Availability::Valid
+                                && f.label != "Model"
+                                && !DETAILS.contains(&f.label.as_str())
+                        })
+                        .cloned()
+                        .collect();
+                    field_table(ui, "cpu-fields", &primary);
+                    ui.add_space(4.);
+                    folding(ui, tx(ui, "Instruction sets & sensor availability")).show(ui, |ui| {
+                        let fields: Vec<_> = inv
+                            .cpu
+                            .iter()
+                            .filter(|f| {
+                                f.state != Availability::Valid
+                                    || DETAILS.contains(&f.label.as_str())
+                            })
+                            .cloned()
+                            .collect();
+                        field_table(ui, "cpu-extra", &fields);
+                    });
+                });
+                return;
+            }
+            card(ui, |ui| {
+                card_title(ui, "Logical processors");
+                let Some(sample) = self.state.history.back() else {
+                    caption(ui, tx(ui, "Waiting for processor samples…"));
+                    return;
+                };
+                // One line per logical processor: name, meter, value.
+                let columns = match ui.available_width() {
+                    width if width >= 720. => 4,
+                    width if width >= 520. => 3,
+                    _ => 2,
+                };
+                let gap = 20.;
+                let cell_width =
+                    ((ui.available_width() - (columns - 1) as f32 * gap) / columns as f32).floor();
+                ui.spacing_mut().item_spacing.y = 4.;
+                for (row, chunk) in sample.per_core_usage.chunks(columns).enumerate() {
+                    // An exact row height: `horizontal` would pad it to a control's.
+                    let width = ui.available_width();
+                    ui.allocate_ui_with_layout(
+                        vec2(width, 22.),
+                        Layout::left_to_right(Align::Center),
+                        |ui| {
+                            ui.spacing_mut().item_spacing.x = gap;
+                            for (offset, reading) in chunk.iter().enumerate() {
+                                self.core_cell(ui, row * columns + offset, reading, cell_width, p);
+                            }
+                        },
+                    );
+                }
+                ui.spacing_mut().item_spacing.y = 6.;
+                ui.add_space(12.);
+                divider(ui);
+                ui.add_space(6.);
+                reading_row(ui, "OS-reported clock", &sample.cpu_frequency);
+            });
+        });
+    }
+
+    fn core_cell(&self, ui: &mut Ui, i: usize, r: &Reading, width: f32, p: &theme::Palette) {
+        let (rect, response) = ui.allocate_exact_size(vec2(width, 22.), Sense::hover());
+        let name = format!("CPU {i:02}");
+        let value = if r.state == Availability::Valid {
+            r.value.map(|v| format!("{v:.0}%"))
+        } else {
+            None
+        }
+        .unwrap_or_else(|| {
+            if r.state == Availability::Stale {
+                tx(ui, "Stale")
+            } else {
+                "—".into()
+            }
+        });
+        response.widget_info(|| {
+            WidgetInfo::labeled(WidgetType::Label, true, format!("{name}: {value}"))
+        });
+        let painter = ui.painter();
+        let label = painter.layout_no_wrap(name, regular(12.), p.faint);
+        let number = painter.layout_no_wrap(value, medium(12.5), p.text);
+        let value_width = number.size().x.max(36.);
+        painter.galley(
+            pos2(rect.left(), rect.center().y - label.size().y / 2.),
+            label.clone(),
+            p.faint,
+        );
+        painter.galley(
+            pos2(
+                rect.right() - number.size().x,
+                rect.center().y - number.size().y / 2.,
+            ),
+            number,
+            p.text,
+        );
+        let fraction = match r.value {
+            Some(value) if r.state == Availability::Valid => {
+                let target = value as f32 / 100.;
+                if self.state.settings.reduce_motion {
+                    target
+                } else {
+                    ui.ctx()
+                        .animate_value_with_time(Id::new(("core", i)), target, 0.16)
+                }
+            }
+            _ => 0.,
+        };
+        let left = rect.left() + label.size().x + 10.;
+        let right = rect.right() - value_width - 10.;
+        if right > left {
+            let bar = Rect::from_min_max(
+                pos2(left, rect.center().y - 3.),
+                pos2(right, rect.center().y + 3.),
+            );
+            paint_meter(ui, bar, fraction, p.cpu);
+        }
+    }
+
+    fn memory_tab(&self, ui: &mut Ui, inv: &Inventory) {
+        let p = palette(ui);
+        card(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.label(
+                    RichText::new(field_value(ui, &inv.memory, "Installed capacity"))
+                        .font(theme::display(26.)),
+                );
+                muted(ui, tx(ui, "installed"), 14.);
+            });
+            let Some(sample) = self.state.history.back() else {
+                return;
+            };
+            if sample.memory_used.state == Availability::Valid
+                && sample.memory_total.state == Availability::Valid
+                && let (Some(used), Some(total)) =
+                    (sample.memory_used.value, sample.memory_total.value)
+            {
+                ui.add_space(4.);
+                muted(
+                    ui,
+                    td(
+                        ui,
+                        format!(
+                            "{} in use · {} available to the system",
+                            ui_bytes(ui, used as u64),
+                            ui_bytes(ui, total as u64)
+                        ),
+                    ),
+                    13.5,
+                );
+                ui.add_space(10.);
+                let fraction = if total > 0. {
+                    (used / total) as f32
+                } else {
+                    0.
+                };
+                meter(ui, fraction, ui.available_width(), 6., p.memory);
+            } else {
+                let state = if sample.memory_used.state != Availability::Valid {
+                    &sample.memory_used.state
+                } else {
+                    &sample.memory_total.state
+                };
+                ui.label(td(
+                    ui,
+                    format!("Memory readings: {}", tx(ui, availability(state))),
+                ));
+            }
+        });
+        ui.add_space(CARD_GAP);
+        let module_count = inv
+            .memory
+            .iter()
+            .filter(|f| f.label.ends_with(" capacity") && per_module(&f.label))
+            .count();
+        let module = |ui: &mut Ui, n: usize| {
+            card(ui, |ui| {
+                card_title(ui, &format!("Module {n}"));
+                let prefix = format!("Module {n} ");
+                let fields: Vec<_> = inv
+                    .memory
+                    .iter()
+                    .filter(|f| f.label.starts_with(&prefix))
+                    .map(|f| {
+                        let mut f = f.clone();
+                        f.label = f.label[prefix.len()..].to_string();
+                        if let Some(first) = f.label.get_mut(0..1) {
+                            first.make_ascii_uppercase();
+                        }
+                        f
+                    })
+                    .collect();
+                field_table(ui, &format!("dimm{n}"), &fields);
+            });
+        };
+        // Side by side in pairs; a lone last module keeps half the width
+        // there, and stacked modules leave no gap for a missing partner.
+        let side_by_side = (ui.available_width() - CARD_GAP) / 2. >= 300.;
+        for pair in (0..module_count).step_by(2) {
+            let count = (module_count - pair).min(2);
+            if side_by_side {
+                columns(ui, 2, 300., |ui, j| {
+                    if j < count {
+                        module(ui, pair + j + 1);
+                    }
+                });
+            } else {
+                columns(ui, count, 300., |ui, j| module(ui, pair + j + 1));
+            }
+            ui.add_space(CARD_GAP);
+        }
+        folding(ui, tx(ui, "Channel mode, timings & profiles")).show(ui, |ui| {
+            let fields: Vec<_> = inv
+                .memory
+                .iter()
+                .filter(|f| !per_module(&f.label) && f.label != "Installed capacity")
+                .cloned()
+                .collect();
+            field_table(ui, "memory-extra", &fields);
+        });
+    }
+
     fn gpu(&mut self, ui: &mut Ui) {
-        header(ui, "GPU");
         let Some(inv) = self.state.inventory.clone() else {
+            page_header(ui, "GPU", None);
             loading(ui, &self.state);
             return;
         };
         if inv.adapters.is_empty() {
-            ui.label(tx(ui, NO_GPU));
+            page_header(ui, "GPU", None);
+            empty_state(ui, Icon::Gpu, &tx(ui, NO_GPU));
             return;
         }
         self.state.adapter = self.state.adapter.min(inv.adapters.len() - 1);
-        ComboBox::from_id_salt("adapter")
-            .width(ui.available_width().min(440.))
-            .selected_text(&inv.adapters[self.state.adapter].name)
-            .show_ui(ui, |ui| {
-                for (i, a) in inv.adapters.iter().enumerate() {
-                    ui.selectable_value(&mut self.state.adapter, i, &a.name);
-                }
-            });
+        let adapters = &inv.adapters;
+        let selected = &mut self.state.adapter;
+        // One adapter is named under the title; several get a picker.
+        let subtitle = (adapters.len() == 1).then(|| adapters[0].name.clone());
+        let picker = (adapters.len() > 1).then_some(|ui: &mut Ui| {
+            ComboBox::from_id_salt("adapter")
+                .width(ui.available_width().min(360.))
+                .selected_text(&adapters[*selected].name)
+                .icon(combo_icon)
+                .show_ui(ui, |ui| {
+                    for (i, a) in adapters.iter().enumerate() {
+                        ui.selectable_value(selected, i, &a.name);
+                    }
+                });
+        });
+        page_header_with(ui, "GPU", subtitle.as_deref(), picker);
         let adapter = &inv.adapters[self.state.adapter];
-        ui.add_space(18.);
-        let utilization: Vec<_> = self
-            .state
-            .history
-            .iter()
-            .map(|s| {
-                (
-                    s.timestamp_ms,
-                    gpu_reading(s, &adapter.id, "Utilization").and_then(|r| r.value),
-                )
-            })
-            .collect();
-        let temperature: Vec<_> = self
-            .state
-            .history
-            .iter()
-            .map(|s| {
-                (
-                    s.timestamp_ms,
-                    gpu_reading(s, &adapter.id, "Temperature").and_then(|r| r.value),
-                )
-            })
-            .collect();
-        if ui.available_width() < 600. {
-            metric_chart(ui, "Utilization", &utilization, "%", 100., GPU, 142.);
-            ui.add_space(12.);
-            metric_chart(ui, "Temperature", &temperature, "°C", 110., CPU, 142.);
-        } else {
-            ui.columns(2, |cols| {
+        let utilization =
+            self.series(|s| gpu_reading(s, &adapter.id, "Utilization").and_then(|r| r.value));
+        let temperature =
+            self.series(|s| gpu_reading(s, &adapter.id, "Temperature").and_then(|r| r.value));
+        columns(ui, 2, 260., |ui, index| {
+            if index == 0 {
+                metric_chart(ui, "Utilization", &utilization, "%", 100., Series::Gpu, 96.);
+            } else {
                 metric_chart(
-                    &mut cols[0],
-                    "Utilization",
-                    &utilization,
-                    "%",
-                    100.,
-                    GPU,
-                    142.,
-                );
-                metric_chart(
-                    &mut cols[1],
+                    ui,
                     "Temperature",
                     &temperature,
                     "°C",
                     110.,
-                    CPU,
-                    142.,
+                    Series::Temperature,
+                    96.,
                 );
-            });
-        }
-        ui.add_space(22.);
-        panel(ui, |ui| {
-            if ui.available_width() < 400. {
-                ui.label(RichText::new(tx(ui, "Sensors")).size(17.));
-                caption(ui, tx(ui, "Minimum / maximum · last 120 s"));
-            } else {
-                ui.horizontal(|ui| {
-                    ui.label(RichText::new(tx(ui, "Sensors")).size(17.));
-                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        caption(ui, tx(ui, "Minimum / maximum · last 120 s"));
-                    });
-                });
             }
+        });
+        ui.add_space(CARD_GAP);
+        card(ui, |ui| {
+            ui.spacing_mut().item_spacing.y = 2.;
+            ui.label(RichText::new(tx(ui, "Sensors")).font(semibold(15.)));
+            caption(ui, tx(ui, "Minimum / maximum · last 120 s"));
+            ui.spacing_mut().item_spacing.y = 6.;
             ui.add_space(8.);
             let sample = self
                 .state
                 .history
                 .back()
                 .and_then(|s| s.gpus.iter().find(|g| g.adapter_id == adapter.id));
-            if let Some(sample) = sample {
-                let main: Vec<_> = sample
+            let Some(sample) = sample else {
+                caption(ui, tx(ui, "Waiting for sensor samples…"));
+                return;
+            };
+            let detail = |name: &str| {
+                name.starts_with("Process ")
+                    || name.starts_with("Engine ")
+                    || [
+                        "Power (driver percentage)",
+                        "NVIDIA memory allocated + reserved",
+                        "Fan",
+                    ]
+                    .contains(&name)
+            };
+            let main: Vec<_> = sample
+                .readings
+                .iter()
+                .filter(|(name, _)| !detail(name))
+                .collect();
+            sensor_table(ui, "sensors", &main, &self.state.history, &adapter.id);
+            ui.add_space(4.);
+            folding(ui, tx(ui, "Driver counters & process memory")).show(ui, |ui| {
+                let extras: Vec<_> = sample
                     .readings
                     .iter()
-                    .filter(|(name, _)| {
-                        !name.starts_with("Process ")
-                            && !name.starts_with("Engine ")
-                            && name != "Power (driver percentage)"
-                            && name != "NVIDIA memory allocated + reserved"
-                            && name != "Fan"
-                    })
+                    .filter(|(name, _)| detail(name))
                     .collect();
-                sensor_table(ui, "sensors", &main, &self.state.history, &adapter.id);
-                folding(ui, tx(ui, "Driver counters & process memory")).show(ui, |ui| {
-                    let extras: Vec<_> = sample
-                        .readings
-                        .iter()
-                        .filter(|(name, _)| {
-                            name.starts_with("Process ")
-                                || name.starts_with("Engine ")
-                                || name == "Power (driver percentage)"
-                                || name == "NVIDIA memory allocated + reserved"
-                                || name == "Fan"
-                        })
-                        .collect();
-                    sensor_table(
-                        ui,
-                        "sensors-extra",
-                        &extras,
-                        &self.state.history,
-                        &adapter.id,
-                    );
-                });
-            } else {
-                ui.label(tx(ui, "Waiting for sensor samples…"));
-            }
+                sensor_table(
+                    ui,
+                    "sensors-extra",
+                    &extras,
+                    &self.state.history,
+                    &adapter.id,
+                );
+            });
         });
-        ui.add_space(18.);
-        panel(ui, |ui| {
-            ui.label(RichText::new(tx(ui, "Adapter specifications")).size(17.));
-            ui.add_space(12.);
+        ui.add_space(CARD_GAP);
+        const IDENTITY: [&str; 4] = [
+            "Sensor binding",
+            "LUID",
+            "Subsystem / revision",
+            "Dedicated system memory",
+        ];
+        card(ui, |ui| {
+            card_title(ui, "Adapter specifications");
             let fields: Vec<_> = adapter
                 .fields
                 .iter()
-                .filter(|f| {
-                    ![
-                        "Sensor binding",
-                        "LUID",
-                        "Subsystem / revision",
-                        "Dedicated system memory",
-                    ]
-                    .contains(&f.label.as_str())
-                })
+                .filter(|f| !IDENTITY.contains(&f.label.as_str()))
                 .cloned()
                 .collect();
-            if ui.available_width() < 680. {
-                field_table(ui, "gpu-stacked", &fields);
-            } else {
-                ui.columns(2, |cols| {
-                    let midpoint = fields.len().div_ceil(2);
-                    field_table(&mut cols[0], "gpu-left", &fields[..midpoint]);
-                    field_table(&mut cols[1], "gpu-right", &fields[midpoint..]);
-                });
-            }
+            let midpoint = fields.len().div_ceil(2);
+            columns(ui, 2, 280., |ui, index| {
+                if index == 0 {
+                    field_table(ui, "gpu-left", &fields[..midpoint]);
+                } else {
+                    field_table(ui, "gpu-right", &fields[midpoint..]);
+                }
+            });
+            ui.add_space(4.);
             folding(ui, tx(ui, "Provider binding & identifiers")).show(ui, |ui| {
                 let fields: Vec<_> = adapter
                     .fields
                     .iter()
-                    .filter(|f| {
-                        [
-                            "Sensor binding",
-                            "LUID",
-                            "Subsystem / revision",
-                            "Dedicated system memory",
-                        ]
-                        .contains(&f.label.as_str())
-                    })
+                    .filter(|f| IDENTITY.contains(&f.label.as_str()))
                     .cloned()
                     .collect();
                 field_table(ui, "gpu-identity", &fields);
             });
         });
+        ui.add_space(SECTION_GAP);
     }
-    fn storage(&mut self, ui: &mut Ui) {
-        let compact = ui.available_width() < 520.;
-        header(ui, "Storage");
-        // Keep all scan actions together. Reserve their width even when idle,
-        // so starting a scan never moves the path field or wraps Cancel alone.
-        let actions_width = scan_actions_width(ui);
-        let path_label_width = label_width(ui, &tx(ui, "Path"), 36.);
-        let stacked = ui.available_width() < actions_width + path_label_width + 240.;
-        let path_width = if stacked {
-            (ui.available_width() - path_label_width - 10.).max(100.)
-        } else {
-            (ui.available_width() - actions_width - path_label_width - 30.).clamp(160., 360.)
-        };
-        if stacked {
-            ui.horizontal(|ui| self.scan_path(ui, path_width));
-            ui.horizontal(|ui| self.scan_actions(ui));
-        } else {
-            ui.horizontal(|ui| {
-                self.scan_path(ui, path_width);
-                self.scan_actions(ui);
-            });
-        }
-        self.storage_results(ui, compact);
-    }
-    fn scan_path(&mut self, ui: &mut Ui, path_width: f32) {
-        let path_label = ui.label(tx(ui, "Path"));
-        let response = ui
-            .add_sized(
-                [path_width, 34.],
-                TextEdit::singleline(&mut self.state.settings.path)
-                    .id(Id::new("scan-path"))
-                    .hint_text(tx(ui, PATH_HINT))
-                    .margin(vec2(10., 8.)),
-            )
-            .labelled_by(path_label.id);
-        if response.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
-            self.state.start_scan();
-        }
-    }
-    fn scan_actions(&mut self, ui: &mut Ui) {
-        let compact = ui.available_width() < scan_actions_width(ui);
-        let browse_label = tx(ui, "Browse…");
-        let browse = ui.add_sized(
-            [
-                if compact {
-                    36.
-                } else {
-                    label_width(ui, &browse_label, 82.)
-                },
-                34.,
-            ],
-            Button::new(if compact { "…" } else { &browse_label }),
-        );
-        browse.widget_info(|| WidgetInfo::labeled(WidgetType::Button, true, &browse_label));
-        if browse.on_hover_text(&browse_label).clicked() {
-            self.state.pick_folder();
-        }
-        if ui
-            .add_sized(
-                [
-                    if compact {
-                        label_width(ui, &tx(ui, "Scan"), 76.)
-                    } else {
-                        scan_primary_width(ui)
-                    },
-                    34.,
-                ],
-                Button::new(
-                    RichText::new(tx(
-                        ui,
-                        if compact || self.state.nodes.is_empty() {
-                            "Scan"
-                        } else {
-                            "Rescan"
-                        },
-                    ))
-                    .color(ui.visuals().panel_fill),
-                )
-                .fill(ui.visuals().text_color())
-                .wrap(),
-            )
-            .on_hover_text(tx(ui, "Start a new scan of this path (F5)"))
-            .clicked()
-        {
-            self.state.start_scan();
-        }
-        if self.state.scan.is_some()
-            && ui
-                .add_sized(
-                    [label_width(ui, &tx(ui, "Cancel"), 76.), 34.],
-                    Button::new(tx(ui, "Cancel")),
-                )
-                .clicked()
-        {
-            self.state.cancel_scan();
-        }
-    }
-    fn storage_results(&mut self, ui: &mut Ui, compact: bool) {
-        if let Some(inv) = &self.state.inventory {
-            let mut drive = None;
-            ui.horizontal_wrapped(|ui| {
-                for d in &inv.drives {
-                    if ui
-                        .small_button(td(
-                            ui,
-                            format!("{}  {} free", d.mount, ui_bytes(ui, d.free_bytes)),
-                        ))
-                        .clicked()
-                    {
-                        drive = Some(d.mount.clone());
-                    }
-                }
-            });
-            if let Some(path) = drive {
-                self.state.settings.path = path;
-                self.state.start_scan();
-            }
-        }
-        ui.add_space(14.);
-        if self.state.nodes.is_empty() {
-            ui.add_space(38.);
-            ui.label(
-                RichText::new(tx(
-                    ui,
-                    if self.state.scan.is_some() {
-                        "Reading directory metadata…"
-                    } else {
-                        "No scan results"
-                    },
-                ))
-                .size(20.),
-            );
-            if let Some(s) = &self.state.summary {
-                for note in &s.notes {
-                    ui.label(RichText::new(td(ui, note)).color(accent(ui, GPU)));
-                }
-            }
-            return;
-        }
-        let scope = &self.state.nodes[self.state.scope];
-        let scope_logical = scope.logical;
-        let scope_allocated = scope.allocated;
-        let files = scope.files;
-        let partial = scope.incomplete || self.state.scan.is_some();
-        let lower_bound = if partial { "≥ " } else { "" };
-        let totals = [
-            (
-                "On disk",
-                format!("{lower_bound}{}", ui_bytes(ui, scope_allocated)),
-            ),
-            (
-                "Files",
-                format!("{lower_bound}{}", i18n::language(ui).integer(files)),
-            ),
-        ];
-        if compact {
-            for (label, value) in &totals {
-                summary_row(ui, label, value, None);
-            }
-        } else {
-            ui.columns(2, |columns| {
-                for (column, (label, value)) in columns.iter_mut().zip(&totals) {
-                    column.label(
-                        RichText::new(tx(column, *label))
-                            .size(12.)
-                            .color(muted(column)),
-                    );
-                    column.add(Label::new(RichText::new(value).size(25.)).wrap());
-                }
-            });
-        }
-        // File sizes only add information where compression, sparse files or
-        // cluster rounding make them differ noticeably from bytes on disk.
-        if scope_logical.abs_diff(scope_allocated) > scope_allocated.max(scope_logical) / 100 {
-            caption(
-                ui,
-                td(
-                    ui,
-                    format!("File size: {lower_bound}{}", ui_bytes(ui, scope_logical)),
-                ),
-            );
-        }
-        ui.add_space(6.);
-        ui.horizontal_wrapped(|ui| {
-            ui.label(
-                RichText::new(scan_status(&self.state))
-                    .color(if self.state.scan.is_some() {
-                        accent(ui, GPU)
-                    } else {
-                        muted(ui)
-                    })
-                    .size(12.),
-            );
-            let denied = self.state.summary.as_ref().is_some_and(|s| s.denied > 0);
-            if denied
-                && self.state.scan.is_none()
-                && !self.state.nodes.is_empty()
-                && !elevated()
-                && ui
-                    .small_button(tx(ui, "Scan as administrator"))
-                    .on_hover_text(tx(ui, "Windows protects some system folders from standard accounts. Rigometry restarts with administrator rights and scans this path again, still reading metadata only."))
-                    .clicked()
-            {
-                let root = crate::storage::node_path(&self.state.nodes, 0);
-                match relaunch_elevated(&root) {
-                    Ok(()) => ui.ctx().send_viewport_cmd(ViewportCommand::Close),
-                    Err(error) => self.state.notice = Some(error),
-                }
-            }
-        });
-        ui.add_space(10.);
-        let mut crumbs = vec![self.state.scope];
-        let mut parent = self.state.nodes[self.state.scope].parent;
-        while let Some(p) = parent {
-            crumbs.push(p);
-            parent = self.state.nodes[p].parent;
-        }
-        crumbs.reverse();
-        ui.horizontal_wrapped(|ui| {
-            for (i, id) in crumbs.iter().enumerate() {
-                if i > 0 {
-                    ui.label(RichText::new("/").color(muted(ui)));
-                }
-                // The scan root's name is its full path; show only its last
-                // part, as for every other folder, and the path on hover.
-                let name = &self.state.nodes[*id].name;
-                let short = std::path::Path::new(name)
-                    .file_name()
-                    .map_or(name.clone(), |n| n.to_string_lossy().into_owned());
-                let crumb = ui.small_button(&short);
-                let crumb = if short == *name {
-                    crumb
-                } else {
-                    crumb.on_hover_text(name)
-                };
-                if crumb.clicked() {
-                    self.state.navigate_scope(*id);
-                }
-            }
-        });
-        ui.add_space(8.);
-        let split = ui.available_width() >= 840.;
-        // Stable control IDs while asynchronous drive discovery changes the
-        // number of widgets above this toolbar.
-        ui.push_id("storage-view-tabs", |ui| {
-            ui.horizontal_wrapped(|ui| {
-                for (view, label) in [
-                    (View::Hierarchy, "Hierarchy"),
-                    (View::Largest, "Largest files"),
-                    (View::Map, "Map"),
-                    (View::Duplicates, "Duplicates"),
-                ] {
-                    if ui
-                        .selectable_label(self.state.view == view, tx(ui, label))
-                        .clicked()
-                        && self.state.view != view
-                    {
-                        self.state.view = view;
-                        if view == View::Largest {
-                            self.state.sort = Sort::Allocated;
-                            self.state.descending = true;
-                        }
-                        self.state.refresh_now();
-                    }
-                }
-            })
-        });
-        ui.add_space(4.);
-        ui.push_id("storage-filter-export", |ui| ui.horizontal_wrapped(|ui| {
-            let filter_label = ui.label(tx(ui, "Search"));
-            let filter_width = (ui.available_width() - 136.).clamp(120., 380.);
-            let search = ui.add_sized([filter_width, 30.], TextEdit::singleline(&mut self.state.filter).id(Id::new("scan-filter")).hint_text(tx(ui, "Name, folder or ext:pdf size:>1g"))).labelled_by(filter_label.id);
-            let search = search.on_hover_text(tx(ui, "Words match names and the folders above them. Words of five or more letters forgive one typo.\n'exact   ^prefix   suffix$   !exclude   \"two words\"\next:mp4,mkv   kind:file   kind:dir   path:text\nsize:>500m   size:1g..4g   (k m g t = KiB MiB GiB TiB; kb mb gb tb are decimal)\ntype: image, video, audio, doc, code, archive, disk, app, font"));
-            if search.changed() {
-                self.state.filter_changed();
-            }
-            // The duplicates view offers its own report instead.
-            let can_export = self.state.scan.is_none() && self.state.task.is_none();
-            ui.add_enabled_ui(can_export, |ui| {
-                if self.state.view == View::Duplicates {
-                    return;
-                }
-                for format in ["CSV", "JSON"] {
-                    if ui.button(format).on_hover_text(tx(ui, "Export whole scan, including entries outside the current folder or filter")).clicked() {
-                        self.state.export(&format.to_lowercase());
-                    }
-                }
-            });
-        }));
-        if let Some(error) = &self.state.search_error {
-            ui.add_space(4.);
-            ui.label(
-                RichText::new(td(ui, error))
-                    .size(12.)
-                    .color(ui.visuals().warn_fg_color),
-            );
-        } else if !self.state.filter.trim().is_empty()
-            && self.state.visible.is_empty()
-            && self.state.visible_filter == self.state.filter
-        {
-            ui.add_space(4.);
-            caption(ui, tx(ui, "No matches below this folder"));
-        }
-        ui.add_space(16.);
-        let viewport_height = ui.ctx().content_rect().height();
-        // Measure content consumed above the results, independent of scrolling.
-        // Leave room for the selected path, actions and scan notes below them.
-        let used_height = ui.cursor().top() - ui.max_rect().top();
-        let height = (viewport_height - used_height - 200.).clamp(180., 480.);
-        let clicked = if self.state.view == View::Duplicates {
-            self.storage_duplicates(ui);
-            None
-        } else if self.state.view == View::Map {
-            self.storage_map(ui, height)
-        } else if split {
-            let width = ui.available_width();
-            // Names truncate with a tooltip; the size map gets the rest of the row.
-            let table_width = (width * 0.25).clamp(220., 420.) + 324.;
-            let map_width = width - table_width - 18.;
-            // Beside a short list, the map ends with the list instead of
-            // pushing the actions below into empty space.
-            let rows = 48. + 30. * self.state.visible.len() as f32;
-            let map_height = (rows - 12.).clamp(150., height);
-            ui.horizontal_top(|ui| {
-                let table_clicked = ui
-                    .allocate_ui_with_layout(
-                        vec2(table_width, 0.),
-                        Layout::top_down(Align::Min),
-                        |ui| self.storage_table(ui),
-                    )
-                    .inner;
-                ui.add_space(8.);
-                let map_clicked = ui
-                    .allocate_ui_with_layout(
-                        vec2(map_width, 0.),
-                        Layout::top_down(Align::Min),
-                        |ui| self.storage_map(ui, map_height),
-                    )
-                    .inner;
-                table_clicked.or(map_clicked)
-            })
-            .inner
-        } else {
-            self.storage_table(ui)
-        };
-        if let Some(id) = clicked {
-            self.state.navigate_scope(id);
-        }
-        let total = self.state.nodes[self.state.scope].allocated;
-        ui.add_space(10.);
-        let node = &self.state.nodes[self.state.selected];
-        let path = crate::storage::node_path(&self.state.nodes, self.state.selected);
-        let is_dir = node.is_dir;
-        ui.horizontal_wrapped(|ui| {
-            copy_label(ui, &path.to_string_lossy(), 12., muted(ui));
-            for text in [
-                format!("On disk: {}", node_size(ui, node, true)),
-                format!("File size: {}", node_size(ui, node, false)),
-                format!(
-                    "Scope: {}%",
-                    i18n::language(ui).decimal(share(node.allocated, total), 1)
-                ),
-            ] {
-                caption(ui, "·");
-                caption(ui, td(ui, text));
-            }
-        });
-        ui.horizontal_wrapped(|ui| {
-            if ui.button(tx(ui, "Copy path")).clicked() {
-                ui.ctx().copy_text(path.to_string_lossy().into());
-            }
-            if ui.button(tx(ui, REVEAL)).clicked()
-                && let Err(e) = reveal(&path)
-            {
-                self.state.notice = Some(e);
-            }
-            if is_dir && ui.button(tx(ui, "Open folder")).clicked() {
-                self.state.navigate_scope(self.state.selected);
-            }
-            if self.state.view == View::Duplicates {
-                return;
-            }
-            caption(
-                ui,
-                td(
-                    ui,
-                    format!(
-                        "{} entries",
-                        i18n::language(ui).integer(self.state.visible.len() as u64)
-                    ),
-                ),
-            );
-        });
-        if let Some(summary) = &self.state.summary {
-            folding(ui, tx(ui, "Scan accounting & skipped entries")).id_salt("scan-notes").show(ui,|ui|{ui.label(td(ui, format!("{} errors · {} reparse points · {} cloud placeholders · {} hard-link aliases",summary.errors,summary.skipped_reparse,summary.skipped_cloud,summary.hard_links))); if summary.denied + summary.locked > 0 { ui.label(td(ui, format!("{} access denied · {} in use by other programs", summary.denied, summary.locked))); } for note in &summary.notes{ui.label(td(ui, note));} });
-        }
-    }
-    fn storage_table(&mut self, ui: &mut Ui) -> Option<usize> {
-        let compact = ui.available_width() < 640.;
-        // Counting files only says something about folders; the largest-files
-        // list has none, so it drops the column.
-        let counts = self.state.view != View::Largest;
-        let total = self.state.nodes[self.state.scope].allocated;
-        let mut clicked = None;
-        let mut toggle = None;
-        let mut new_sort = None;
-        let mut action = None;
-        let mut table = TableBuilder::new(ui)
-            .id_salt(("files", self.state.scan_generation, compact, counts))
-            // TableBody::rows virtualizes against the outer page clip rect.
-            // One scrollbar therefore remains efficient for very large scans.
-            .vscroll(false)
-            .vertical_scroll_offset(0.)
-            .scroll_bar_visibility(scroll_area::ScrollBarVisibility::AlwaysHidden)
-            .striped(false)
-            .resizable(false)
-            .cell_layout(Layout::left_to_right(Align::Center))
-            .sense(Sense::click())
-            .column(Column::remainder().clip(true))
-            .column(Column::exact(104.).clip(true));
-        if counts {
-            table = table.column(Column::exact(if compact { 70. } else { 84. }).clip(true));
-        }
-        if !compact {
-            table = table.column(Column::exact(60.).clip(true));
-        }
-        table = table.column(Column::exact(36.));
-        table
-            .header(48., |mut h| {
-                for (label, sort) in [
-                    ("Name", Some(Sort::Name)),
-                    ("On disk", Some(Sort::Allocated)),
-                    ("Files", Some(Sort::Files)),
-                    ("Scope %", None),
-                ] {
-                    if (compact && sort.is_none()) || (!counts && sort == Some(Sort::Files)) {
-                        continue;
-                    }
-                    h.col(|ui| {
-                        let marker = if sort == Some(self.state.sort) {
-                            if self.state.descending {
-                                " ↓"
-                            } else {
-                                " ↑"
-                            }
-                        } else {
-                            ""
-                        };
-                        if ui
-                            .add(
-                                Button::new(
-                                    RichText::new(format!("{}{marker}", tx(ui, label))).size(12.),
-                                )
-                                .wrap()
-                                .frame(false),
-                            )
-                            .clicked()
-                        {
-                            new_sort = sort;
-                        }
-                    });
-                }
-                h.col(|_| {});
-            })
-            .body(|body| {
-                body.rows(30., self.state.visible.len(), |mut row| {
-                    let (id, depth) = self.state.visible[row.index()];
-                    let nodes = &self.state.nodes;
-                    let node = &nodes[id];
-                    row.set_selected(self.state.selected == id);
-                    // Cell widgets are keyed by entry, not row position: rows
-                    // re-sort while a scan runs, and focus must stay on its entry.
-                    row.col(|ui| {
-                        ui.push_id(id, |ui| {
-                            let indent = (depth.min(20) as f32 * 15.)
-                                .min((ui.available_width() - 75.).max(0.));
-                            ui.add_space(indent);
-                            if node.is_dir {
-                                if folder_toggle(ui, &node.name, self.state.expanded.contains(&id))
-                                    .clicked()
-                                {
-                                    toggle = Some(id);
-                                }
-                            } else {
-                                ui.add_space(38.);
-                            }
-                            let response =
-                                ui.add(Label::new(&node.name).truncate().sense(Sense::click()));
-                            if response.clicked() || response.secondary_clicked() {
-                                self.state.selected = id;
-                            }
-                            if response.double_clicked() && node.is_dir {
-                                clicked = Some(id);
-                            }
-                            entry_menu(&response, nodes, id, &mut action);
-                            response.on_hover_ui(|ui| {
-                                ui.label(td(
-                                    ui,
-                                    format!(
-                                        "{}\nOn disk: {}\nFile size: {}\nScope: {}%\n{}",
-                                        crate::storage::node_path(nodes, id).display(),
-                                        node_size(ui, node, true),
-                                        node_size(ui, node, false),
-                                        i18n::language(ui).decimal(share(node.allocated, total), 1),
-                                        td(ui, &node.note)
-                                    ),
-                                ));
-                            });
-                        });
-                    });
-                    row.col(|ui| {
-                        let value = node_size(ui, node, true);
-                        numeric_value(ui, &value, ui.available_width(), 12.).on_hover_text(&value);
-                    });
-                    if counts {
-                        row.col(|ui| {
-                            if !node.is_dir {
-                                return;
-                            }
-                            let lang = i18n::language(ui);
-                            let count = if node.incomplete || self.state.scan.is_some() {
-                                format!("≥ {}", lang.integer(node.files))
-                            } else {
-                                lang.integer(node.files)
-                            };
-                            numeric_value(ui, &count, ui.available_width(), 12.)
-                                .on_hover_text(&count);
-                        });
-                    }
-                    if !compact {
-                        row.col(|ui| {
-                            let value = i18n::language(ui).decimal(share(node.allocated, total), 1);
-                            numeric_value(ui, &value, ui.available_width(), 12.);
-                        });
-                    }
-                    row.col(|ui| {
-                        ui.push_id(id, |ui| {
-                            if reveal_button(ui, &node.name).clicked() {
-                                action = Some(EntryAction::Reveal(id));
-                            }
-                        });
-                    });
-                    let response = row.response();
-                    if response.clicked() || response.secondary_clicked() {
-                        self.state.selected = id;
-                    }
-                    entry_menu(&response, nodes, id, &mut action);
-                });
-            });
-        if let Some(id) = toggle {
-            if !self.state.expanded.remove(&id) {
-                self.state.expanded.insert(id);
-            }
-            self.state.refresh_now();
-        }
-        if let Some(sort) = new_sort {
-            if self.state.sort == sort {
-                self.state.descending = !self.state.descending;
-            } else {
-                self.state.sort = sort;
-                self.state.descending = sort != Sort::Name;
-            }
-            self.state.refresh_now();
-        }
-        self.apply_entry_action(ui, action);
-        clicked
-    }
-    fn apply_entry_action(&mut self, ui: &Ui, action: Option<EntryAction>) {
-        match action {
-            Some(EntryAction::Reveal(id)) => {
-                self.state.selected = id;
-                if let Err(error) = reveal(&crate::storage::node_path(&self.state.nodes, id)) {
-                    self.state.notice = Some(error);
-                }
-            }
-            Some(EntryAction::CopyPath(id)) => {
-                ui.ctx().copy_text(
-                    crate::storage::node_path(&self.state.nodes, id)
-                        .to_string_lossy()
-                        .into(),
-                );
-            }
-            Some(EntryAction::Open(id)) => self.state.navigate_scope(id),
-            None => {}
-        }
-    }
-    /// Files with identical contents below the current folder, found on request.
-    fn storage_duplicates(&mut self, ui: &mut Ui) {
-        let running = self.state.duplicates_running();
-        ui.horizontal_wrapped(|ui| {
-            let label = ui.label(tx(ui, "Smallest file"));
-            let current = self.state.settings.duplicate_min_size;
-            ComboBox::from_id_salt("duplicate-min-size")
-                .selected_text(minimum_label(ui, current))
-                .show_ui(ui, |ui| {
-                    for size in [1, 4 << 10, 64 << 10, 1 << 20, 16 << 20, 256 << 20] {
-                        ui.selectable_value(
-                            &mut self.state.settings.duplicate_min_size,
-                            size,
-                            minimum_label(ui, size),
-                        );
-                    }
-                })
-                .response
-                .labelled_by(label.id);
-            if running {
-                if ui.button(tx(ui, "Cancel")).clicked() {
-                    self.state.cancel_duplicates();
-                }
-            } else if ui
-                .add_enabled(
-                    self.state.scan.is_none(),
-                    Button::new(tx(ui, "Find duplicates")),
-                )
-                .on_hover_text(tx(ui, "Reads the files below this folder that share their size with another file and compares their contents. Nothing is changed or deleted."))
-                .on_disabled_hover_text(tx(ui, "Available when the scan has finished"))
-                .clicked()
-            {
-                self.state.find_duplicates();
-            }
-        });
-        ui.add_space(8.);
-        let Some(found) = &self.state.duplicates else {
-            caption(
-                ui,
-                tx(
-                    ui,
-                    "Copies are files with the same size and the same BLAKE3 hash of their contents. Further hard links of one file are not copies; nothing is changed or deleted.",
-                ),
-            );
-            return;
-        };
-        let nodes = &self.state.nodes;
-        if found.root != self.state.scope {
-            caption(
-                ui,
-                td(
-                    ui,
-                    format!(
-                        "Results for {}",
-                        crate::storage::node_path(nodes, found.root).display()
-                    ),
-                ),
-            );
-        }
-        let lang = i18n::language(ui);
-        if running {
-            if let Some(progress) = &found.progress {
-                let stage = match progress.stage {
-                    crate::storage::duplicates::Stage::Sampling => {
-                        "Comparing the start and end of each file"
-                    }
-                    crate::storage::duplicates::Stage::Contents => "Comparing full contents",
-                };
-                let fraction = if progress.bytes_total == 0 {
-                    0.
-                } else {
-                    progress.bytes_done as f32 / progress.bytes_total as f32
-                };
-                ui.add(ProgressBar::new(fraction.clamp(0., 1.)).text(td(
-                    ui,
-                    format!(
-                        "{}: {} of {} files · {} of {}",
-                        tx(ui, stage),
-                        lang.integer(progress.files_done),
-                        lang.integer(progress.files_total),
-                        ui_bytes(ui, progress.bytes_done),
-                        ui_bytes(ui, progress.bytes_total)
-                    ),
-                )));
-            } else {
-                ui.label(RichText::new(tx(ui, "Grouping files by size…")).color(accent(ui, GPU)));
-            }
-        }
-        // Counts describe the groups shown, which the search may narrow.
-        let shown = found.visible.iter().map(|&g| &found.groups[g]);
-        let reclaimable = shown
-            .clone()
-            .map(|g| g.reclaimable)
-            .fold(0, u64::saturating_add);
-        let extra: u64 = shown.map(|g| g.copies.len() as u64 - 1).sum();
-        let mut export = None;
-        ui.horizontal_wrapped(|ui| {
-            let text = match &found.summary {
-                Some(summary) if found.groups.is_empty() => td(
-                    ui,
-                    format!(
-                        "No copies among {} files of at least {}",
-                        lang.integer(summary.files),
-                        ui_bytes(ui, summary.min_size)
-                    ),
-                ),
-                _ if found.visible.is_empty() && !found.groups.is_empty() => {
-                    tx(ui, "No sets of copies match the search")
-                }
-                _ => td(
-                    ui,
-                    format!(
-                        "{} sets of copies · {} extra copies · up to {} reclaimable",
-                        lang.integer(found.visible.len() as u64),
-                        lang.integer(extra),
-                        ui_bytes(ui, reclaimable)
-                    ),
-                ),
-            };
-            ui.label(RichText::new(text).size(15.));
-            if let Some(summary) = &found.summary {
-                if !found.visible.is_empty() {
-                    ui.add_enabled_ui(self.state.task.is_none(), |ui| {
-                        for format in ["CSV", "JSON"] {
-                            if ui
-                                .button(format)
-                                .on_hover_text(tx(ui, "Export the sets of copies shown"))
-                                .clicked()
-                            {
-                                export = Some(format.to_lowercase());
-                            }
-                        }
-                    });
-                }
-                // An incomplete search must not read as "no copies" or "all copies".
-                let status = match summary.status() {
-                    "cancelled_partial" => Some("Partial · cancelled"),
-                    "partial" => Some("Partial"),
-                    _ => None,
-                };
-                if let Some(status) = status {
-                    ui.label(
-                        RichText::new(tx(ui, status))
-                            .size(12.)
-                            .color(accent(ui, GPU)),
-                    );
-                }
-            }
-        });
-        ui.add_space(8.);
-        let mut action = None;
-        if !found.rows.is_empty() {
-            TableBuilder::new(ui)
-                .id_salt(("duplicates", self.state.scan_generation))
-                .vscroll(false)
-                .vertical_scroll_offset(0.)
-                .scroll_bar_visibility(scroll_area::ScrollBarVisibility::AlwaysHidden)
-                .striped(false)
-                .resizable(false)
-                .cell_layout(Layout::left_to_right(Align::Center))
-                .sense(Sense::click())
-                .column(Column::remainder().clip(true))
-                .column(Column::exact(104.).clip(true))
-                .column(Column::exact(36.))
-                .body(|body| {
-                    body.rows(30., found.rows.len(), |mut row| {
-                        match found.rows[row.index()] {
-                            DuplicateRow::Group(g) => {
-                                let group = &found.groups[g];
-                                row.col(|ui| {
-                                    ui.push_id(("group", g), |ui| {
-                                        ui.add(
-                                            Label::new(
-                                                RichText::new(td(
-                                                    ui,
-                                                    format!(
-                                                        "{} copies of {} · up to {} reclaimable",
-                                                        group.copies.len(),
-                                                        ui_bytes(ui, group.size),
-                                                        ui_bytes(ui, group.reclaimable)
-                                                    ),
-                                                ))
-                                                .strong(),
-                                            )
-                                            .truncate(),
-                                        );
-                                    });
-                                });
-                                row.col(|_| {});
-                                row.col(|_| {});
-                            }
-                            DuplicateRow::Copy(g, c) => {
-                                let group = &found.groups[g];
-                                let copy = &group.copies[c];
-                                let id = copy.id;
-                                let node = &nodes[id];
-                                row.set_selected(self.state.selected == id);
-                                row.col(|ui| {
-                                    ui.push_id(("copy", id), |ui| {
-                                        ui.add_space(24.);
-                                        let folder = relative_folder(nodes, id, found.root);
-                                        let mut job = egui::text::LayoutJob::default();
-                                        let font = FontId::proportional(14.);
-                                        job.append(&node.name, 0., TextFormat::simple(font.clone(), ui.visuals().text_color()));
-                                        job.append(
-                                            &folder,
-                                            12.,
-                                            TextFormat::simple(FontId::proportional(12.), muted(ui)),
-                                        );
-                                        let response = ui.add(Label::new(job).truncate().sense(Sense::click()));
-                                        if response.clicked() || response.secondary_clicked() {
-                                            self.state.selected = id;
-                                        }
-                                        entry_menu(&response, nodes, id, &mut action);
-                                        response.on_hover_ui(|ui| {
-                                            let path = crate::storage::node_path(nodes, id);
-                                            let mut lines = vec![path.display().to_string()];
-                                            if c == 0 && group.copies.iter().any(|other| other.modified_ms != copy.modified_ms) {
-                                                lines.push(tx(ui, "Oldest copy"));
-                                            }
-                                            lines.push(if copy.links > 1 {
-                                                tx(ui, "Deleting this path frees nothing: other hard links keep the file.")
-                                            } else {
-                                                td(ui, format!("Deleting it frees up to {}", ui_bytes(ui, copy.freeable)))
-                                            });
-                                            ui.label(lines.join("\n"));
-                                        });
-                                    });
-                                });
-                                row.col(|ui| {
-                                    let value = node_size(ui, node, true);
-                                    numeric_value(ui, &value, ui.available_width(), 12.);
-                                });
-                                row.col(|ui| {
-                                    ui.push_id(("copy-reveal", id), |ui| {
-                                        if reveal_button(ui, &node.name).clicked() {
-                                            action = Some(EntryAction::Reveal(id));
-                                        }
-                                    });
-                                });
-                                if row.response().clicked() {
-                                    self.state.selected = id;
-                                }
-                            }
-                        }
-                    });
-                });
-        }
-        if let Some(summary) = &found.summary {
-            ui.add_space(8.);
-            folding(ui, tx(ui, "Comparison details")).id_salt("duplicate-notes").show(ui, |ui| {
-                ui.label(td(
-                    ui,
-                    format!(
-                        "{} files compared · {} read · {}",
-                        lang.integer(summary.compared),
-                        ui_bytes(ui, summary.bytes_read),
-                        tx(ui, &summary.medium)
-                    ),
-                ));
-                ui.label(td(
-                    ui,
-                    format!(
-                        "{} smaller files not compared · {} hard-link paths · {} changed since the scan · {} skipped · {} errors",
-                        lang.integer(summary.below_minimum),
-                        lang.integer(summary.hard_links),
-                        lang.integer(summary.changed),
-                        lang.integer(summary.skipped),
-                        lang.integer(summary.errors)
-                    ),
-                ));
-                for note in &summary.notes {
-                    ui.label(td(ui, note));
-                }
-            });
-        }
-        if let Some(format) = export {
-            self.state.export_duplicates(&format);
-        }
-        self.apply_entry_action(ui, action);
-    }
-    fn storage_map(&mut self, ui: &mut Ui, height: f32) -> Option<usize> {
-        let mut clicked = None;
-        let mut action = None;
-        ui.label(RichText::new(tx(ui, "Size map")).size(15.));
-        ui.add_space(8.);
-        let (rect, _) =
-            ui.allocate_exact_size(vec2(ui.available_width(), height - 40.), Sense::hover());
-        let nonzero = &self.state.map_ids;
-        if nonzero.is_empty() {
-            ui.painter().text(
-                rect.center(),
-                Align2::CENTER_CENTER,
-                tx(ui, "No nonzero files"),
-                FontId::proportional(13.),
-                muted(ui),
-            );
-        } else {
-            // Keyed by size: scrolling moves the map without laying it out again.
-            if self.map_key != Some((self.state.map_revision, rect.size())) {
-                self.map_cache = treemap_tiles(nonzero, &self.state.nodes, rect);
-                self.map_key = Some((self.state.map_revision, rect.size()));
-                self.map_origin = rect.min;
-            }
-            let offset = rect.min - self.map_origin;
-            for &(id, tile) in &self.map_cache {
-                let rect = tile.translate(offset);
-                if rect.width() < 1. || rect.height() < 1. {
-                    continue;
-                }
-                let node = &self.state.nodes[id];
-                let r = rect.shrink(1.5);
-                // Tiles too small to point at are painted, not made interactive:
-                // a folder of thousands of files must not cost a widget each.
-                if rect.width() < 6. || rect.height() < 6. {
-                    ui.painter()
-                        .rect_filled(r, 2, tile_color(id, ui.visuals().dark_mode));
-                    continue;
-                }
-                let response = ui.interact(
-                    r,
-                    Id::new(("tile", self.state.scan_generation, id)),
-                    Sense::click(),
-                );
-                let accessible_label = format!("{} {}", node.name, node_size(ui, node, true));
-                response.widget_info(|| {
-                    WidgetInfo::labeled(WidgetType::Button, true, &accessible_label)
-                });
-                let base = tile_color(id, ui.visuals().dark_mode);
-                ui.painter().rect_filled(
-                    r,
-                    4,
-                    if response.hovered() {
-                        base.gamma_multiply(1.18)
-                    } else {
-                        base
-                    },
-                );
-                if self.state.selected == id || response.has_focus() {
-                    ui.painter().rect_stroke(
-                        r,
-                        4,
-                        Stroke::new(2.0f32, ui.visuals().text_color()),
-                        StrokeKind::Inside,
-                    );
-                }
-                if r.width() > 60. && r.height() > 40. {
-                    let p = ui.painter().with_clip_rect(r.shrink(6.));
-                    for (text, font, color, y) in [
-                        (
-                            node.name.clone(),
-                            FontId::proportional(13.),
-                            Color32::WHITE,
-                            9.,
-                        ),
-                        (
-                            node_size(ui, node, true),
-                            FontId::monospace(11.),
-                            Color32::from_gray(210),
-                            29.,
-                        ),
-                    ] {
-                        let mut job = egui::text::LayoutJob::simple_singleline(text, font, color);
-                        job.wrap.max_width = r.width() - 18.;
-                        job.wrap.max_rows = 1;
-                        job.wrap.break_anywhere = true;
-                        let galley = ui.fonts_mut(|fonts| fonts.layout_job(job));
-                        p.galley(r.left_top() + vec2(9., y), galley, color);
-                    }
-                }
-                if response.clicked() || response.secondary_clicked() {
-                    self.state.selected = id;
-                }
-                if response.double_clicked() && node.is_dir {
-                    clicked = Some(id);
-                }
-                entry_menu(&response, &self.state.nodes, id, &mut action);
-                response.on_hover_ui(|ui| {
-                    ui.label(td(
-                        ui,
-                        format!(
-                            "{}\n{} on disk · {} file size\nDouble-click a folder to open",
-                            crate::storage::node_path(&self.state.nodes, id).display(),
-                            node_size(ui, node, true),
-                            node_size(ui, node, false)
-                        ),
-                    ));
-                });
-            }
-        }
-        ui.add_space(10.);
-        caption(ui, tx(ui, "Area = size on disk · double-click to open"));
-        self.apply_entry_action(ui, action);
-        clicked
-    }
+
     fn diagnostics(&mut self, ui: &mut Ui) {
-        header(ui, "Diagnostics");
-        if ui.button(tx(ui, "Export hardware & samples…")).clicked() {
+        let mut export = false;
+        page_header_with(
+            ui,
+            "Diagnostics",
+            None,
+            Some(|ui: &mut Ui| {
+                export = ui.button(tx(ui, "Export hardware & samples…")).clicked();
+            }),
+        );
+        if export {
             self.state.export_hardware();
         }
-        ui.add_space(16.);
         if let Some(error) = &self.state.hardware_error {
-            ui.colored_label(GPU, td(ui, error));
+            ui.label(RichText::new(td(ui, error)).color(palette(ui).error));
+            ui.add_space(12.);
         }
+        let p = palette(ui);
         if let Some(inv) = &self.state.inventory {
             for note in &inv.diagnostics {
-                ui.label(td(ui, note));
-                ui.add_space(6.);
+                ui.add(Label::new(RichText::new(td(ui, note)).color(p.muted)).wrap());
+                ui.add_space(4.);
             }
-            ui.add_space(12.);
-            for (name, fields) in [
-                ("CPU", &inv.cpu),
-                ("Memory", &inv.memory),
-                ("Motherboard", &inv.motherboard),
-                (crate::model::OS_NAME, &inv.os),
-            ] {
-                folding(ui, tx(ui, name)).id_salt(name).show(ui, |ui| {
-                    for f in fields {
-                        diagnostic_field(ui, f);
-                    }
-                });
-            }
-            for adapter in &inv.adapters {
-                // Two identical GPUs share a name; their IDs differ.
-                folding(ui, &adapter.name)
-                    .id_salt(&adapter.id)
-                    .show(ui, |ui| {
-                        for f in &adapter.fields {
-                            diagnostic_field(ui, f);
-                        }
-                    });
-            }
+            ui.add_space(16.);
+            section_header(ui, "Inventory", |_| {});
+            card(ui, |ui| {
+                for (name, fields) in [
+                    ("CPU", &inv.cpu),
+                    ("Memory", &inv.memory),
+                    ("Motherboard", &inv.motherboard),
+                    (crate::model::OS_NAME, &inv.os),
+                ] {
+                    folding(ui, tx(ui, name))
+                        .id_salt(("inventory", name))
+                        .show(ui, |ui| {
+                            for f in fields {
+                                diagnostic_field(ui, f);
+                            }
+                        });
+                }
+                for adapter in &inv.adapters {
+                    // Two identical GPUs share a name; their IDs differ.
+                    folding(ui, &adapter.name)
+                        .id_salt(("inventory-adapter", &adapter.id))
+                        .show(ui, |ui| {
+                            for f in &adapter.fields {
+                                diagnostic_field(ui, f);
+                            }
+                        });
+                }
+            });
         }
         if let Some(sample) = self.state.history.back() {
-            ui.add_space(16.);
-            ui.label(td(
-                ui,
-                format!("Latest sample: {} ms since Unix epoch", sample.timestamp_ms),
-            ));
-            for (label, r) in [
-                ("CPU utilization", &sample.cpu_usage),
-                ("Memory used", &sample.memory_used),
-                ("OS-reported frequency", &sample.cpu_frequency),
-            ] {
-                reading_diagnostic(ui, label, r);
-            }
-            for gpu in &sample.gpus {
-                folding(ui, &gpu.adapter_id).show(ui, |ui| {
-                    for (label, r) in &gpu.readings {
-                        reading_diagnostic(ui, label, r);
-                    }
-                });
-            }
+            ui.add_space(SECTION_GAP);
+            section_header(ui, "Latest sample", |ui| {
+                caption(
+                    ui,
+                    td(ui, format!("{} ms since Unix epoch", sample.timestamp_ms)),
+                );
+            });
+            card(ui, |ui| {
+                for (label, r) in [
+                    ("CPU utilization", &sample.cpu_usage),
+                    ("Memory used", &sample.memory_used),
+                    ("OS-reported frequency", &sample.cpu_frequency),
+                ] {
+                    reading_diagnostic(ui, label, r);
+                }
+                for gpu in &sample.gpus {
+                    // Name the adapter as the inventory does; its ID is in the samples.
+                    let name = self
+                        .state
+                        .inventory
+                        .as_ref()
+                        .and_then(|inv| inv.adapters.iter().find(|a| a.id == gpu.adapter_id))
+                        .map_or(gpu.adapter_id.as_str(), |a| a.name.as_str());
+                    folding(ui, name)
+                        .id_salt(("sample-adapter", &gpu.adapter_id))
+                        .show(ui, |ui| {
+                            for (label, r) in &gpu.readings {
+                                reading_diagnostic(ui, label, r);
+                            }
+                        });
+                }
+            });
         }
+        ui.add_space(SECTION_GAP);
     }
+
     fn settings(&mut self, ui: &mut Ui) {
-        header(ui, "Settings");
-        section(ui, "Appearance", |ui| {
-            ui.horizontal_wrapped(|ui| {
-                let label = ui.label(tx(ui, "Language"));
-                egui::ComboBox::from_id_salt("language")
+        page_header(ui, "Settings", None);
+        // A form reads best at a bounded width, labels and controls together.
+        ui.set_max_width(ui.available_width().min(760.));
+        let width = label_column(
+            ui,
+            ["Language", "Theme", "Interface scale", "Reduce motion"].map(|l| tx(ui, l)),
+            120.,
+            200.,
+        );
+        section_header(ui, "Appearance", |_| {});
+        card(ui, |ui| {
+            setting_row(ui, "Language", width, |ui, label| {
+                ComboBox::from_id_salt("language")
                     .selected_text(tx(ui, self.state.settings.language.native_name()))
+                    .icon(combo_icon)
                     .show_ui(ui, |ui| {
                         for language in Language::ALL {
                             if ui
@@ -2164,63 +956,90 @@ impl App {
                         }
                     })
                     .response
-                    .labelled_by(label.id);
+                    .labelled_by(label);
             });
-            ui.add_space(12.);
-            ui.horizontal_wrapped(|ui| {
-                ui.label(tx(ui, "Theme"));
-                for theme in ["Dark", "Light", "System"] {
-                    if ui
-                        .selectable_value(
-                            &mut self.state.settings.theme,
-                            theme.into(),
-                            tx(ui, theme),
-                        )
-                        .changed()
-                    {
-                        apply_style(ui.ctx(), &self.state.settings);
-                    }
+            divider(ui);
+            setting_row(ui, "Theme", width, |ui, _| {
+                let current = self.state.settings.theme.clone();
+                if let Some(theme) = segmented(
+                    ui,
+                    "theme",
+                    current.as_str(),
+                    &[("Dark", "Dark"), ("Light", "Light"), ("System", "System")],
+                ) {
+                    self.state.settings.theme = theme.into();
+                    theme::apply(ui.ctx(), &self.state.settings);
                 }
             });
-            ui.add_space(12.);
-            let scale_label = ui.label(tx(ui, "Interface scale"));
-            ui.spacing_mut().slider_width = (ui.available_width() - 90.).clamp(80., 220.);
-            let scale = ui
-                .add(
-                    Slider::new(&mut self.state.settings.scale, 0.85..=1.5)
-                        .custom_formatter(|value, _| format!("{:.0}%", value * 100.))
-                        .custom_parser(|text| {
-                            text.trim()
-                                .trim_end_matches('%')
-                                .replace(',', ".")
-                                .parse::<f64>()
-                                .ok()
-                                .map(|value| value / 100.)
-                        })
-                        .step_by(0.05),
-                )
-                .labelled_by(scale_label.id);
-            // Zooming while dragging moves the pointer within the slider and
-            // makes it oscillate; apply the scale once the drag ends.
-            if scale.drag_stopped() || (scale.changed() && !scale.dragged()) {
-                apply_style(ui.ctx(), &self.state.settings);
+            divider(ui);
+            setting_row(ui, "Interface scale", width, |ui, _| {
+                let scale = &mut self.state.settings.scale;
+                let mut changed = false;
+                let step = |ui: &mut Ui, text: &str, label: &str, enabled: bool| {
+                    let response =
+                        ui.add_enabled(enabled, Button::new(text).min_size(vec2(32., 32.)));
+                    let label = tx(ui, label);
+                    response
+                        .widget_info(|| WidgetInfo::labeled(WidgetType::Button, enabled, &label));
+                    response.on_hover_text(label).clicked()
+                };
+                if step(ui, "−", "Smaller interface", *scale > 0.86) {
+                    *scale = finite_scale(((*scale - 0.05) * 20.).round() / 20.);
+                    changed = true;
+                }
+                ui.add_sized(
+                    [56., 32.],
+                    Label::new(RichText::new(format!("{:.0}%", *scale * 100.)).font(medium(14.))),
+                );
+                if step(ui, "+", "Larger interface", *scale < 1.49) {
+                    *scale = finite_scale(((*scale + 0.05) * 20.).round() / 20.);
+                    changed = true;
+                }
+                if (*scale - 1.).abs() > 0.001
+                    && ui.add(quiet_button(ui, tx(ui, "Reset"))).clicked()
+                {
+                    *scale = 1.;
+                    changed = true;
+                }
+                if changed {
+                    theme::apply(ui.ctx(), &self.state.settings);
+                }
+            });
+            divider(ui);
+            ui.add_space(8.);
+            let label = tx(ui, "Reduce motion");
+            let column = if ui.available_width() < width + 240. {
+                None
+            } else {
+                Some(width)
+            };
+            let reduce_motion = &mut self.state.settings.reduce_motion;
+            let changed = match column {
+                Some(column) => toggle_row(ui, reduce_motion, &label, column),
+                None => toggle(ui, reduce_motion, &label),
             }
-            ui.add_space(12.);
-            if ui
-                .checkbox(
-                    &mut self.state.settings.reduce_motion,
-                    tx(ui, "Reduce motion"),
-                )
-                .changed()
-            {
-                apply_style(ui.ctx(), &self.state.settings);
+            .changed();
+            if changed {
+                theme::apply(ui.ctx(), &self.state.settings);
             }
+            ui.add_space(8.);
         });
-        ui.add_space(26.);
-        section(ui, "Updates", |ui| self.updates_section(ui));
-        ui.add_space(26.);
-        section(ui, "Keyboard", |ui| {
-            for (key, label) in [
+        ui.add_space(SECTION_GAP);
+        let updates_top = ui.cursor().top();
+        section_header(ui, "Updates", |_| {});
+        let card_rect = card(ui, |ui| {
+            self.updates_section(ui);
+            ui.min_rect()
+        });
+        if std::mem::take(&mut self.reveal_updates) {
+            let section =
+                Rect::from_x_y_ranges(card_rect.x_range(), updates_top..=card_rect.bottom());
+            ui.scroll_to_rect(section, Some(Align::TOP));
+        }
+        ui.add_space(SECTION_GAP);
+        section_header(ui, "Keyboard", |_| {});
+        card(ui, |ui| {
+            let shortcuts = [
                 (
                     if cfg!(target_os = "macos") {
                         "⌘ 1…4"
@@ -2234,34 +1053,73 @@ impl App {
                 ("F5", "Rescan current path"),
                 ("Escape", "Cancel current scan or comparison"),
                 ("Alt + Up", "Go to parent scan folder"),
-            ] {
-                summary_row(ui, key, &tx(ui, label), None);
+            ];
+            for (index, (key, label)) in shortcuts.iter().enumerate() {
+                if index > 0 {
+                    ui.add_space(4.);
+                }
+                ui.horizontal(|ui| {
+                    keycap(ui, key, width);
+                    ui.add(Label::new(tx(ui, label)).wrap());
+                });
             }
         });
-        ui.add_space(24.);
-        section(ui, "Storage accounting", |ui| {
-            ui.label(tx(ui, "Logical bytes count every file path. Allocated bytes count each file identity once across hard links. Named data streams are included only in administrator scans of a whole drive. Directory and volume metadata overhead is excluded."));
-            ui.add_space(8.);
-            ui.label(tx(ui, "Scans skip reparse points and cloud placeholders. Files may change during a scan; partial results and read errors remain visible."));
+        ui.add_space(SECTION_GAP);
+        section_header(ui, "Storage accounting", |_| {});
+        card(ui, |ui| {
+            let p = palette(ui);
+            for text in [
+                "Logical bytes count every file path. Allocated bytes count each file identity once across hard links. Named data streams are included only in administrator scans of a whole drive. Directory and volume metadata overhead is excluded.",
+                "Scans skip reparse points and cloud placeholders. Files may change during a scan; partial results and read errors remain visible.",
+            ] {
+                ui.add(Label::new(RichText::new(tx(ui, text)).color(p.muted)).wrap());
+                ui.add_space(6.);
+            }
         });
-        ui.add_space(24.);
-        ui.label(
-            RichText::new(i18n::language(ui).format(
+        ui.add_space(20.);
+        caption(
+            ui,
+            i18n::language(ui).format(
                 "Rigometry {0} · Application source: MIT · Rust / egui",
                 &[env!("CARGO_PKG_VERSION").into()],
-            ))
-            .color(muted(ui)),
+            ),
         );
+        ui.add_space(SECTION_GAP);
     }
 
     /// The version, the automatic check, and a newer release with its notes and
     /// the one click that installs it.
     fn updates_section(&mut self, ui: &mut Ui) {
-        ui.label(concat!("Rigometry ", env!("CARGO_PKG_VERSION")));
-        ui.checkbox(
+        let p = palette(ui);
+        ui.horizontal(|ui| {
+            ui.label(
+                RichText::new(concat!("Rigometry ", env!("CARGO_PKG_VERSION"))).font(semibold(15.)),
+            );
+            let status = self.state.updates.as_ref().and_then(|updates| {
+                if updates.checking() {
+                    Some(tx(ui, "Checking for updates…"))
+                } else if updates.offered().is_none()
+                    && updates.installing.is_none()
+                    && updates.ready.is_none()
+                    && updates.record.checked_at.is_some()
+                {
+                    Some(tx(ui, "This is the newest version."))
+                } else {
+                    None
+                }
+            });
+            if let Some(status) = status {
+                caption(ui, "·");
+                caption(ui, status);
+            }
+        });
+        ui.add_space(10.);
+        toggle(
+            ui,
             &mut self.state.settings.check_updates,
-            tx(ui, "Check for new versions automatically"),
+            &tx(ui, "Check for new versions automatically"),
         );
+        ui.add_space(4.);
         caption(
             ui,
             tx(
@@ -2269,16 +1127,14 @@ impl App {
                 "Rigometry asks GitHub every six hours. Nothing about you is sent beyond the request itself. Updates install only when you click.",
             ),
         );
-        ui.add_space(8.);
         let blocked = self.state.update_blocked();
         let Some(updates) = &self.state.updates else {
             return;
         };
+        ui.add_space(12.);
         let mut action = None;
         if let Some(installing) = &updates.installing {
-            let received = installing
-                .received
-                .load(std::sync::atomic::Ordering::Relaxed);
+            let received = installing.received.load(Ordering::Relaxed);
             let fraction = if installing.total == 0 {
                 0.
             } else {
@@ -2297,47 +1153,48 @@ impl App {
                     ),
                 )
             };
-            ui.add(ProgressBar::new(fraction.clamp(0., 1.)).text(text));
+            ui.label(text);
+            ui.add_space(6.);
+            meter(ui, fraction, ui.available_width().min(420.), 6., p.accent);
+            ui.add_space(8.);
             if ui.button(tx(ui, "Cancel")).clicked() {
-                action = Some("cancel");
+                action = Some(UpdateAction::Cancel);
             }
         } else if updates.ready.is_some() {
-            ui.label(
-                RichText::new(tx(ui, "The new version is installed"))
-                    .size(16.)
-                    .strong(),
-            );
-            if ui.button(tx(ui, "Restart now")).clicked() {
-                action = Some("restart");
+            ui.label(RichText::new(tx(ui, "The new version is installed")).font(semibold(15.)));
+            ui.add_space(6.);
+            if ui.add(primary_button(ui, tx(ui, "Restart now"))).clicked() {
+                action = Some(UpdateAction::Restart);
             }
         } else if let Some(release) = updates.offered() {
-            ui.label(
-                RichText::new(td(ui, format!("Version {} is available", release.version)))
-                    .size(16.)
-                    .strong(),
-            );
+            ui.horizontal(|ui| {
+                dot(ui, p.accent);
+                ui.label(
+                    RichText::new(td(ui, format!("Version {} is available", release.version)))
+                        .font(semibold(15.)),
+                );
+            });
+            ui.add_space(4.);
             for note in &release.notes {
-                ui.label(format!("•  {note}"));
+                ui.label(RichText::new(format!("•  {note}")).color(p.muted));
             }
+            ui.add_space(8.);
             ui.horizontal_wrapped(|ui| {
                 let install = ui
-                    .add_enabled(
-                        blocked.is_none(),
-                        Button::new(tx(ui, "Update and restart")),
-                    )
+                    .add_enabled(blocked.is_none(), primary_button(ui, tx(ui, "Update and restart")))
                     .on_hover_text(tx(ui, "Downloads the new version from GitHub, checks it against GitHub's SHA-256 checksum, replaces this copy and restarts. Settings are kept."));
                 if let Some(reason) = blocked {
                     install.on_disabled_hover_text(tx(ui, reason));
                 } else if install.clicked() {
-                    action = Some("install");
+                    action = Some(UpdateAction::Install);
                 }
                 if ui.button(tx(ui, "Release page")).clicked() {
-                    action = Some("page");
+                    action = Some(UpdateAction::Page);
                 }
                 if updates.record.skipped.as_deref() != Some(&release.version)
-                    && ui.button(tx(ui, "Skip this version")).clicked()
+                    && ui.add(quiet_button(ui, tx(ui, "Skip this version"))).clicked()
                 {
-                    action = Some("skip");
+                    action = Some(UpdateAction::Skip);
                 }
             });
             if let Some(reason) =
@@ -2345,38 +1202,36 @@ impl App {
             {
                 caption(ui, tx(ui, reason));
             }
-        } else if updates.checking() {
-            caption(ui, tx(ui, "Checking for updates…"));
-        } else if updates.record.checked_at.is_some() {
-            caption(ui, tx(ui, "This is the newest version."));
         }
         if let Some(error) = &updates.error {
+            ui.add_space(4.);
             ui.label(
                 RichText::new(td(ui, error))
-                    .size(12.)
-                    .color(ui.visuals().warn_fg_color),
+                    .font(regular(13.))
+                    .color(p.warn),
             );
         }
-        if updates.installing.is_none()
-            && updates.ready.is_none()
-            && ui
+        if updates.installing.is_none() && updates.ready.is_none() {
+            ui.add_space(4.);
+            if ui
                 .add_enabled(!updates.checking(), Button::new(tx(ui, "Check now")))
                 .clicked()
-        {
-            action = Some("check");
+            {
+                action = Some(UpdateAction::Check);
+            }
         }
         match action {
-            Some("install") => self.state.install_update(),
-            Some("cancel") => self.state.cancel_update(),
-            Some("skip") => self.state.skip_update(),
-            Some("check") => self.state.check_updates(true),
-            Some("restart") => {
+            Some(UpdateAction::Install) => self.state.install_update(),
+            Some(UpdateAction::Cancel) => self.state.cancel_update(),
+            Some(UpdateAction::Skip) => self.state.skip_update(),
+            Some(UpdateAction::Check) => self.state.check_updates(true),
+            Some(UpdateAction::Restart) => {
                 if let Some(updates) = &mut self.state.updates {
                     updates.error = None;
                     updates.restart = true;
                 }
             }
-            Some("page") => {
+            Some(UpdateAction::Page) => {
                 let url = self
                     .state
                     .updates
@@ -2389,7 +1244,7 @@ impl App {
                     self.state.notice = Some(error);
                 }
             }
-            _ => {}
+            None => {}
         }
     }
 
@@ -2439,6 +1294,45 @@ impl App {
         );
         ctx.send_viewport_cmd(ViewportCommand::Close);
     }
+
+    /// Messages and background work, shown under the page.
+    fn status_bar(&mut self, ui: &mut Ui) {
+        let p = palette(ui);
+        let mut dismiss = false;
+        ui.horizontal_wrapped(|ui| {
+            ui.spacing_mut().item_spacing.x = 8.;
+            if let Some(notice) = &self.state.notice {
+                dot(ui, p.accent);
+                ui.label(RichText::new(td(ui, notice)).font(regular(13.)));
+                let close = ui
+                    .add(quiet_button(ui, "×").min_size(vec2(26., 24.)))
+                    .on_hover_text(tx(ui, "Dismiss"));
+                let label = tx(ui, "Dismiss");
+                close.widget_info(|| WidgetInfo::labeled(WidgetType::Button, true, &label));
+                dismiss = close.clicked();
+            }
+            if self.state.task.is_some() {
+                ui.add(Spinner::new().size(12.).color(p.muted));
+                caption(ui, tx(ui, "File dialog / export in progress"));
+            } else if self.state.scan.is_some() && self.state.settings.page != Page::Storage {
+                ui.add(Spinner::new().size(12.).color(p.accent));
+                caption(ui, storage::scan_status(&self.state));
+            }
+        });
+        if dismiss {
+            self.state.notice = None;
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+enum UpdateAction {
+    Install,
+    Cancel,
+    Skip,
+    Check,
+    Restart,
+    Page,
 }
 
 impl eframe::App for App {
@@ -2631,16 +1525,20 @@ impl eframe::App for App {
             Duration::from_secs(1)
         });
     }
+
     fn ui(&mut self, ui: &mut Ui, _: &mut eframe::Frame) {
         i18n::set_context(ui.ctx(), self.state.settings.language);
+        let p = palette(ui);
         egui::Panel::left("navigation")
             .resizable(false)
             .exact_size(navigation_width(ui))
-            .frame(
-                Frame::new()
-                    .fill(ui.visuals().panel_fill)
-                    .inner_margin(Margin::symmetric(18, 20)),
-            )
+            .frame(Frame::new().fill(p.window).inner_margin(Margin {
+                left: 12,
+                right: 10,
+                top: 18,
+                bottom: 14,
+            }))
+            .show_separator_line(false)
             .show_inside(ui, |ui| self.sidebar(ui));
         if self.state.notice.is_some()
             || self.state.task.is_some()
@@ -2648,59 +1546,43 @@ impl eframe::App for App {
         {
             egui::Panel::bottom("status")
                 .resizable(false)
-                .frame(
-                    Frame::new()
-                        .fill(ui.visuals().panel_fill)
-                        .inner_margin(Margin::symmetric(24, 6)),
-                )
-                .show_inside(ui, |ui| {
-                    ui.vertical(|ui| {
-                        if let Some(notice) = &self.state.notice {
-                            ui.label(RichText::new(td(ui, notice)).size(12.));
-                        }
-                        if self.state.task.is_some() {
-                            caption(ui, tx(ui, "File dialog / export in progress"));
-                        } else if self.state.scan.is_some()
-                            && self.state.settings.page != Page::Storage
-                        {
-                            ui.label(
-                                RichText::new(scan_status(&self.state))
-                                    .size(12.)
-                                    .color(accent(ui, GPU)),
-                            );
-                        }
-                    });
-                });
+                .show_separator_line(false)
+                .frame(Frame::new().fill(p.window).inner_margin(Margin {
+                    left: 6,
+                    right: CANVAS_OUTSET,
+                    top: 0,
+                    bottom: 6,
+                }))
+                .show_inside(ui, |ui| self.status_bar(ui));
         }
         CentralPanel::default()
-            .frame(
-                Frame::new()
-                    .fill(ui.visuals().panel_fill)
-                    .inner_margin(Margin::same(26)),
-            )
+            .frame(Frame::new().fill(p.window).inner_margin(Margin {
+                left: 0,
+                right: CANVAS_OUTSET,
+                top: CANVAS_OUTSET,
+                bottom: CANVAS_OUTSET,
+            }))
             .show_inside(ui, |ui| {
-                if self.state.settings.page == Page::Storage {
-                    ScrollArea::vertical()
-                        .scroll_bar_visibility(scroll_area::ScrollBarVisibility::AlwaysVisible)
-                        .id_salt("storage-outer")
-                        .auto_shrink([false, false])
-                        .show(ui, |ui| self.storage(ui));
-                } else {
-                    ScrollArea::vertical()
-                        .scroll_bar_visibility(scroll_area::ScrollBarVisibility::AlwaysVisible)
-                        .id_salt(("page-scroll", self.state.settings.page))
-                        .auto_shrink([false, false])
-                        .show(ui, |ui| match self.state.settings.page {
+                Frame::new()
+                    .fill(p.canvas)
+                    .stroke(Stroke::new(1.0_f32, p.border))
+                    .corner_radius(12)
+                    .inner_margin(CANVAS_PADDING)
+                    .show(ui, |ui| {
+                        ui.set_min_size(ui.available_size());
+                        let page = self.state.settings.page;
+                        page_scroll(ui, ("page-scroll", page), |ui| match page {
                             Page::Overview => self.overview(ui),
                             Page::Cpu => self.cpu(ui),
                             Page::Gpu => self.gpu(ui),
+                            Page::Storage => self.storage(ui),
                             Page::Diagnostics => self.diagnostics(ui),
                             Page::Settings => self.settings(ui),
-                            Page::Storage => {}
                         });
-                }
+                    });
             });
     }
+
     fn save(&mut self, storage: &mut dyn eframe::Storage) {
         if self.capture_dir.is_none() {
             eframe::set_value(storage, "settings", &self.state.settings);
@@ -2709,79 +1591,47 @@ impl eframe::App for App {
             eframe::set_value(storage, "update", &updates.record);
         }
     }
+
     fn persist_egui_memory(&self) -> bool {
         self.capture_dir.is_none()
     }
 }
 
-fn apply_style(ctx: &Context, settings: &Settings) {
-    // Ctrl/⌘ + plus/minus would zoom past the scale setting and the minimum
-    // window size derived from it; the setting is the one zoom control.
-    ctx.options_mut(|options| options.zoom_with_keyboard = false);
-    ctx.send_viewport_cmd(ViewportCommand::MinInnerSize(
-        vec2(1080., 720.) / (BASE_SCALE * settings.scale),
-    ));
-    ctx.set_theme(match settings.theme.as_str() {
-        "Light" => ThemePreference::Light,
-        "System" => ThemePreference::System,
-        _ => ThemePreference::Dark,
-    });
-    ctx.set_zoom_factor(BASE_SCALE * settings.scale);
-    for theme in [Theme::Dark, Theme::Light] {
-        ctx.style_mut_of(theme, |style| {
-            let dark = theme == Theme::Dark;
-            style.spacing.item_spacing = vec2(10., 7.);
-            style.spacing.button_padding = vec2(12., 7.);
-            style.spacing.interact_size = vec2(36., 30.);
-            style.spacing.icon_width = 20.;
-            style.spacing.icon_width_inner = 14.;
-            // Reserve a gutter: floating scrollbars cover right-aligned values.
-            style.spacing.scroll = egui::style::ScrollStyle {
-                bar_width: 10.,
-                bar_inner_margin: 8.,
-                foreground_color: true,
-                ..egui::style::ScrollStyle::solid()
-            };
-            style.animation_time = if settings.reduce_motion { 0. } else { 0.12 };
-            for (text, size) in [
-                (TextStyle::Body, 14.),
-                (TextStyle::Button, 14.),
-                (TextStyle::Small, 12.),
-                (TextStyle::Heading, 26.),
-            ] {
-                style.text_styles.insert(text, FontId::proportional(size));
-            }
-            // Monochrome palette: each pair is (dark theme, light theme) gray.
-            let gray = |on_dark: u8, on_light: u8| {
-                Color32::from_gray(if dark { on_dark } else { on_light })
-            };
-            let v = &mut style.visuals;
-            v.panel_fill = gray(14, 252);
-            v.window_fill = gray(30, 255);
-            v.faint_bg_color = gray(23, 242);
-            v.extreme_bg_color = gray(20, 255);
-            v.override_text_color = Some(gray(237, 18));
-            v.selection.bg_fill = gray(48, 227);
-            v.selection.stroke = Stroke::new(1.5f32, gray(180, 80));
-            v.widgets.inactive.bg_fill = gray(32, 242);
-            v.widgets.inactive.weak_bg_fill = v.widgets.inactive.bg_fill;
-            v.widgets.inactive.bg_stroke = Stroke::new(1.0f32, gray(70, 170));
-            v.widgets.hovered.bg_fill = gray(45, 231);
-            v.widgets.hovered.weak_bg_fill = v.widgets.hovered.bg_fill;
-            v.widgets.active.bg_fill = gray(55, 218);
-            v.widgets.noninteractive.bg_stroke = Stroke::new(1.0f32, gray(46, 219));
+/// The page's one vertical scroll area. Its bar keeps its gutter at all
+/// times, so content never shifts; the handle is hidden while everything fits.
+fn page_scroll(ui: &mut Ui, id: impl std::hash::Hash, add: impl FnOnce(&mut Ui)) {
+    let id = Id::new(id);
+    let fits_id = id.with("fits");
+    let fits = ui.data(|d| d.get_temp::<bool>(fits_id)).unwrap_or(false);
+    let content_style = ui.style().clone();
+    ui.scope(|ui| {
+        let canvas = palette(ui).canvas;
+        // The page's scroll track blends into the canvas.
+        ui.visuals_mut().extreme_bg_color = canvas;
+        if fits {
+            let widgets = &mut ui.visuals_mut().widgets;
             for w in [
-                &mut v.widgets.inactive,
-                &mut v.widgets.hovered,
-                &mut v.widgets.active,
-                &mut v.widgets.noninteractive,
-                &mut v.widgets.open,
+                &mut widgets.inactive,
+                &mut widgets.hovered,
+                &mut widgets.active,
             ] {
-                w.corner_radius = CornerRadius::same(7);
-                w.expansion = 0.;
+                w.bg_fill = canvas;
             }
-        });
-    }
+        }
+        let output = ScrollArea::vertical()
+            .id_salt(id)
+            .scroll_bar_visibility(scroll_area::ScrollBarVisibility::AlwaysVisible)
+            .auto_shrink([false, false])
+            .show(ui, |ui| {
+                ui.set_style(content_style);
+                add(ui);
+            });
+        let fits_now = output.content_size.y <= output.inner_rect.height() + 0.5;
+        if fits_now != fits {
+            ui.data_mut(|d| d.insert_temp(fits_id, fits_now));
+            ui.ctx().request_repaint();
+        }
+    });
 }
 
 fn finite_scale(scale: f32) -> f32 {
@@ -2791,56 +1641,7 @@ fn finite_scale(scale: f32) -> f32 {
         1.0
     }
 }
-/// A minimum file size for the duplicate search: 1 byte means every file.
-fn minimum_label(ui: &Ui, size: u64) -> String {
-    if size <= 1 {
-        tx(ui, "Any size")
-    } else {
-        ui_bytes(ui, size)
-    }
-}
-/// An accent readable on the current theme: the dark theme's pastel accents
-/// are too light on the light theme's near-white panels.
-fn accent(ui: &Ui, color: Color32) -> Color32 {
-    if ui.visuals().dark_mode {
-        color
-    } else if color == CPU {
-        Color32::from_rgb(53, 109, 76)
-    } else if color == MEMORY {
-        Color32::from_rgb(54, 97, 151)
-    } else {
-        Color32::from_rgb(131, 97, 39)
-    }
-}
-/// Small secondary text: hints, counts and status lines.
-fn caption(ui: &mut Ui, text: impl Into<String>) -> Response {
-    let color = muted(ui);
-    ui.label(RichText::new(text).size(12.).color(color))
-}
-fn ui_bytes(ui: &Ui, value: u64) -> String {
-    i18n::language(ui).bytes(value)
-}
-fn label_width(ui: &Ui, label: &str, minimum: f32) -> f32 {
-    ui.painter()
-        .layout_no_wrap(
-            label.to_owned(),
-            FontId::proportional(14.),
-            ui.visuals().text_color(),
-        )
-        .size()
-        .x
-        .max(minimum - 24.)
-        + 24.
-}
-fn scan_primary_width(ui: &Ui) -> f32 {
-    label_width(ui, &tx(ui, "Scan"), 76.).max(label_width(ui, &tx(ui, "Rescan"), 76.))
-}
-fn scan_actions_width(ui: &Ui) -> f32 {
-    label_width(ui, &tx(ui, "Browse…"), 82.)
-        + scan_primary_width(ui)
-        + label_width(ui, &tx(ui, "Cancel"), 76.)
-        + 2. * ui.spacing().item_spacing.x
-}
+
 fn navigation_width(ui: &Ui) -> f32 {
     [
         "Overview",
@@ -2851,9 +1652,211 @@ fn navigation_width(ui: &Ui) -> f32 {
         "Settings",
     ]
     .iter()
-    .map(|label| label_width(ui, &tx(ui, label), 0.) + 66.)
-    .fold(204., f32::max)
+    .map(|label| {
+        ui.painter()
+            .layout_no_wrap(tx(ui, label), medium(14.), Color32::WHITE)
+            .size()
+            .x
+            + 70.
+    })
+    .fold(200., f32::max)
 }
+
+/// A labelled setting: the label column, then its control, or the label
+/// above the control where both do not fit side by side.
+fn setting_row(ui: &mut Ui, label: &str, width: f32, control: impl FnOnce(&mut Ui, Id)) {
+    let text = RichText::new(tx(ui, label)).font(medium(14.));
+    ui.add_space(8.);
+    if ui.available_width() < width + 240. {
+        let label = ui.label(text);
+        ui.add_space(2.);
+        ui.horizontal_wrapped(|ui| control(ui, label.id));
+    } else {
+        ui.horizontal(|ui| {
+            ui.set_min_height(32.);
+            let label = ui.allocate_ui_with_layout(
+                vec2(width, 32.),
+                Layout::left_to_right(Align::Center),
+                |ui| {
+                    ui.set_width(width);
+                    ui.label(text)
+                },
+            );
+            control(ui, label.inner.id);
+        });
+    }
+    ui.add_space(8.);
+}
+
+/// A keyboard shortcut drawn as a key, in a column of `width`.
+fn keycap(ui: &mut Ui, keys: &str, width: f32) {
+    let p = palette(ui);
+    ui.allocate_ui_with_layout(
+        vec2(width, 28.),
+        Layout::left_to_right(Align::Center),
+        |ui| {
+            ui.set_width(width);
+            let galley = ui
+                .painter()
+                .layout_no_wrap(keys.to_owned(), medium(12.5), p.text);
+            let (rect, response) =
+                ui.allocate_exact_size(galley.size() + vec2(14., 8.), Sense::hover());
+            ui.painter().rect(
+                rect,
+                6,
+                p.control,
+                Stroke::new(1.0_f32, p.control_border),
+                StrokeKind::Inside,
+            );
+            ui.painter()
+                .galley(rect.center() - galley.size() / 2., galley, p.text);
+            response.widget_info(|| WidgetInfo::labeled(WidgetType::Label, true, keys));
+        },
+    );
+}
+
+/// A centered message where a page has nothing to show.
+fn empty_state(ui: &mut Ui, icon: Icon, message: &str) {
+    let p = palette(ui);
+    card_with(ui, Margin::symmetric(24, 40), |ui| {
+        ui.vertical_centered(|ui| {
+            let (rect, _) = ui.allocate_exact_size(vec2(36., 36.), Sense::hover());
+            paint_icon(ui.painter(), rect, icon, p.faint);
+            ui.add_space(10.);
+            ui.label(RichText::new(message).font(medium(15.)).color(p.muted));
+        });
+    });
+}
+
+/// One drive: identity, used space as a meter, and a scan button. Returns
+/// whether the scan was requested.
+fn drive_row(ui: &mut Ui, drive: &Drive) -> bool {
+    let p = palette(ui);
+    let used = drive.total_bytes.saturating_sub(drive.free_bytes);
+    let fraction = if drive.total_bytes > 0 {
+        used as f32 / drive.total_bytes as f32
+    } else {
+        0.
+    };
+    let color = if fraction >= 0.9 { p.warn } else { p.muted };
+    let scan_label = tx(ui, "Scan");
+    let scan_width = label_width(ui, &scan_label, 72.);
+    let width = ui.available_width();
+    let mut scan = false;
+    let identity = |ui: &mut Ui, width: f32| {
+        ui.allocate_ui_with_layout(vec2(width, 40.), Layout::top_down(Align::Min), |ui| {
+            ui.set_width(width);
+            ui.spacing_mut().item_spacing.y = 1.;
+            ui.add(
+                Label::new(
+                    RichText::new(format!("{}  {}", drive.mount, drive.name)).font(medium(14.)),
+                )
+                .truncate(),
+            )
+            .on_hover_text(td(
+                ui,
+                format!(
+                    "{}\nCapacity: {}\n{}",
+                    drive.name,
+                    ui_bytes(ui, drive.total_bytes),
+                    drive.mount
+                ),
+            ));
+            caption(
+                ui,
+                format!(
+                    "{} · {}",
+                    drive.file_system,
+                    ui_bytes(ui, drive.total_bytes)
+                ),
+            );
+        });
+    };
+    let usage = |ui: &mut Ui, width: f32| {
+        ui.allocate_ui_with_layout(vec2(width, 40.), Layout::top_down(Align::Min), |ui| {
+            ui.set_width(width);
+            ui.spacing_mut().item_spacing.y = 6.;
+            ui.horizontal(|ui| {
+                ui.label(
+                    RichText::new(td(ui, format!("{} used", ui_bytes(ui, used))))
+                        .font(regular(13.5)),
+                );
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    ui.label(
+                        RichText::new(td(ui, format!("{} free", ui_bytes(ui, drive.free_bytes))))
+                            .font(regular(13.5))
+                            .color(p.muted),
+                    );
+                });
+            });
+            meter(ui, fraction, width, 6., color);
+        });
+    };
+    ui.add_space(10.);
+    if width < 520. {
+        ui.horizontal(|ui| {
+            identity(ui, (width - scan_width - 12.).max(60.));
+            scan = ui
+                .add_sized([scan_width, 30.], Button::new(&scan_label))
+                .clicked();
+        });
+        ui.add_space(4.);
+        usage(ui, width);
+    } else {
+        let name_width = (width * 0.3).clamp(150., 280.);
+        let usage_width = (width - name_width - scan_width - 48.).max(120.);
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 0.;
+            identity(ui, name_width);
+            ui.add_space(24.);
+            usage(ui, usage_width);
+            ui.add_space(24.);
+            scan = ui
+                .add_sized([scan_width, 30.], Button::new(&scan_label))
+                .clicked();
+        });
+    }
+    ui.add_space(10.);
+    scan
+}
+
+fn loading(ui: &mut Ui, state: &State) {
+    let p = palette(ui);
+    ui.horizontal(|ui| {
+        if state.hardware_error.is_none() {
+            ui.add(Spinner::new().size(14.).color(p.muted));
+        }
+        ui.label(
+            RichText::new(td(
+                ui,
+                state
+                    .hardware_error
+                    .as_deref()
+                    .unwrap_or("Reading hardware…"),
+            ))
+            .color(p.muted),
+        );
+    });
+}
+
+/// Manufacturer and model, without repeating the manufacturer and without
+/// joining two "Unavailable" placeholders.
+fn motherboard_name(ui: &Ui, fields: &[Field]) -> String {
+    let known = |name: &str| {
+        fields
+            .iter()
+            .find(|f| f.label == name && f.state == Availability::Valid)
+            .and_then(|f| f.value.clone())
+            .filter(|v| !v.trim().is_empty())
+    };
+    match (known("Manufacturer"), known("Model")) {
+        (Some(maker), Some(model)) if model.starts_with(&maker) => model,
+        (Some(maker), Some(model)) => format!("{maker} {model}"),
+        (Some(value), None) | (None, Some(value)) => value,
+        (None, None) => tx(ui, "Unavailable"),
+    }
+}
+
 fn field_display(ui: &Ui, field: &Field) -> String {
     let lang = i18n::language(ui);
     let Some(value) = &field.value else {
@@ -2862,17 +1865,13 @@ fn field_display(ui: &Ui, field: &Field) -> String {
     let numeric_units = [
         "B", "KiB", "MiB", "GiB", "TiB", "MHz", "MT/s", "bits", "lanes",
     ];
+    let decimals = |number: &str| number.split_once('.').map_or(0, |(_, f)| f.len());
     if numeric_units.contains(&field.unit.as_str())
         && let Ok(number) = value.parse::<f64>()
     {
         return format!(
             "{} {}",
-            lang.decimal(
-                number,
-                value
-                    .split_once('.')
-                    .map_or(0, |(_, fraction)| fraction.len())
-            ),
+            lang.decimal(number, decimals(value)),
             tx(ui, &field.unit)
         );
     }
@@ -2883,12 +1882,7 @@ fn field_display(ui: &Ui, field: &Field) -> String {
     {
         return format!(
             "{} {}",
-            lang.decimal(
-                number_value,
-                number
-                    .split_once('.')
-                    .map_or(0, |(_, fraction)| fraction.len())
-            ),
+            lang.decimal(number_value, decimals(number)),
             td(ui, suffix)
         );
     }
@@ -2915,66 +1909,7 @@ fn field_display(ui: &Ui, field: &Field) -> String {
         value
     }
 }
-fn header(ui: &mut Ui, title: &str) {
-    ui.label(RichText::new(tx(ui, title)).size(27.));
-    ui.add_space(22.);
-}
-fn panel(ui: &mut Ui, body: impl FnOnce(&mut Ui)) {
-    let width = ui.available_width();
-    Frame::new()
-        .fill(ui.visuals().faint_bg_color)
-        .corner_radius(12)
-        .inner_margin(18)
-        .show(ui, |ui| {
-            ui.set_width((width - 36.).max(100.));
-            body(ui);
-        });
-}
-fn section(ui: &mut Ui, title: &str, body: impl FnOnce(&mut Ui)) {
-    ui.label(RichText::new(tx(ui, title)).size(17.));
-    ui.add_space(9.);
-    body(ui);
-}
-fn folding(ui: &Ui, title: impl Into<WidgetText>) -> CollapsingHeader {
-    let title = title.into();
-    let id = title.text().to_owned();
-    let width =
-        (ui.available_width() - ui.spacing().indent - ui.spacing().button_padding.x).max(1.);
-    let galley = title.into_galley(ui, Some(TextWrapMode::Wrap), width, TextStyle::Button);
-    CollapsingHeader::new(galley).id_salt(id)
-}
-fn loading(ui: &mut Ui, state: &State) {
-    ui.add_space(30.);
-    ui.label(td(
-        ui,
-        state
-            .hardware_error
-            .as_deref()
-            .unwrap_or("Reading hardware…"),
-    ));
-}
-/// The folder holding `id`, from the searched folder `root` down: the part
-/// that tells copies apart, where a full path would be cut off before it.
-fn relative_folder(nodes: &[crate::storage::ScanNode], id: usize, root: usize) -> String {
-    let mut names = Vec::new();
-    let mut next = nodes.get(id).and_then(|node| node.parent);
-    while let Some(folder) = next {
-        let name = &nodes[folder].name;
-        if folder == root {
-            // The root's name is its full path; its last part is enough here.
-            names.push(
-                std::path::Path::new(name)
-                    .file_name()
-                    .map_or(name.clone(), |n| n.to_string_lossy().into_owned()),
-            );
-            break;
-        }
-        names.push(name.clone());
-        next = nodes[folder].parent;
-    }
-    names.reverse();
-    names.join(std::path::MAIN_SEPARATOR_STR)
-}
+
 /// Labels like "Module 2 capacity" belong to one memory module; "Module
 /// manufacturer" without a number describes them all.
 fn per_module(label: &str) -> bool {
@@ -2983,6 +1918,7 @@ fn per_module(label: &str) -> bool {
         .and_then(|rest| rest.split_once(' '))
         .is_some_and(|(number, _)| number.parse::<usize>().is_ok())
 }
+
 fn field_value(ui: &Ui, fields: &[Field], name: &str) -> String {
     fields
         .iter()
@@ -2990,74 +1926,93 @@ fn field_value(ui: &Ui, fields: &[Field], name: &str) -> String {
         .map(|f| field_display(ui, f))
         .unwrap_or_else(|| tx(ui, "Unavailable"))
 }
-fn copy_label(ui: &mut Ui, value: &str, size: f32, color: Color32) {
-    let r = ui.add(
-        Label::new(RichText::new(value).size(size).color(color))
-            .wrap()
-            .sense(Sense::click()),
-    );
-    if r.clicked() {
-        ui.ctx().copy_text(value.into());
+
+/// A fact in the overview: clicking opens its page, or copies the value.
+fn summary_row(
+    ui: &mut Ui,
+    label: &str,
+    value: &str,
+    width: f32,
+    navigation: Option<(Page, &mut Page)>,
+) {
+    let response = fact_row(ui, &tx(ui, label), value, width);
+    if let Some((page, target)) = navigation {
+        if response.clicked() {
+            *target = page;
+        }
+        response.on_hover_text(tx(ui, "Open hardware details"));
+    } else {
+        if response.clicked() {
+            ui.ctx().copy_text(value.into());
+        }
+        response.on_hover_text(tx(ui, "Copy value"));
     }
-    r.on_hover_text(tx(ui, "Click to copy"));
+    ui.add_space(4.);
 }
-fn summary_row(ui: &mut Ui, label: &str, value: &str, navigation: Option<(Page, &mut Page)>) {
-    let width = ui.available_width();
-    let label_width = (width * 0.32).clamp(106., 160.);
-    ui.horizontal_top(|ui| {
-        ui.allocate_ui_with_layout(vec2(label_width, 26.), Layout::top_down(Align::Min), |ui| {
-            ui.set_width(label_width);
-            ui.add(
-                Label::new(RichText::new(tx(ui, label)).size(13.).color(muted(ui)))
-                    .halign(Align::Min),
-            );
-        });
-        ui.allocate_ui_with_layout(
-            vec2((width - label_width - 10.).max(80.), 26.),
-            Layout::top_down(Align::Min),
-            |ui| {
-                ui.set_width((width - label_width - 10.).max(80.));
-                let r = ui.add(Label::new(value).wrap().sense(Sense::click()));
-                if let Some((page, target)) = navigation {
-                    if r.clicked() {
-                        *target = page;
-                    }
-                    r.on_hover_text(tx(ui, "Open hardware details"));
-                } else {
-                    if r.clicked() {
-                        ui.ctx().copy_text(value.into());
-                    }
-                    r.on_hover_text(tx(ui, "Copy value"));
-                }
-            },
-        );
-    });
-}
+
 fn field_table(ui: &mut Ui, id: &str, fields: &[Field]) {
-    ui.push_id(id,|ui|{
-        let width=ui.available_width(); let label_width=(width*0.32).clamp(100.,185.);
+    let p = palette(ui);
+    ui.push_id(id, |ui| {
+        let width = ui.available_width();
+        let label_width = (width * 0.36).clamp(100., 190.);
         for f in fields {
+            let value = if f.state == Availability::Unavailable && f.source.starts_with("SMBIOS ") {
+                tx(ui, "Not reported by firmware")
+            } else {
+                field_display(ui, f)
+            };
             ui.horizontal_top(|ui| {
-                ui.allocate_ui_with_layout(vec2(label_width,0.),Layout::top_down(Align::Min),|ui|{
-                    ui.set_width(label_width);ui.add(Label::new(RichText::new(td(ui, &f.label)).color(muted(ui)).size(13.)).wrap());
-                });
-                let available=(width-label_width-10.).max(60.);
-                ui.allocate_ui_with_layout(vec2(available,0.),Layout::top_down(Align::Min),|ui|{
+                ui.spacing_mut().item_spacing.x = 12.;
+                ui.allocate_ui_with_layout(
+                    vec2(label_width, 0.),
+                    Layout::top_down(Align::Min),
+                    |ui| {
+                        ui.set_width(label_width);
+                        ui.add(
+                            Label::new(
+                                RichText::new(td(ui, &f.label))
+                                    .font(regular(13.5))
+                                    .color(p.muted),
+                            )
+                            .wrap(),
+                        );
+                    },
+                );
+                let available = (width - label_width - 12.).max(60.);
+                ui.allocate_ui_with_layout(vec2(available, 0.), Layout::top_down(Align::Min), |ui| {
                     ui.set_width(available);
-                    let value = if f.state == Availability::Unavailable && f.source.starts_with("SMBIOS ") { tx(ui, "Not reported by firmware") } else { field_display(ui, f) };
-                    let response=ui.add(Label::new(RichText::new(&value).size(13.).color(if f.value.is_some(){ui.visuals().text_color()}else{muted(ui)})).wrap().sense(Sense::click()));
-                    if response.clicked(){ui.ctx().copy_text(value);}
-                    response.on_hover_text(td(ui, format!("Source: {}\nState: {}\n{}\nSample: {} ms since Unix epoch\nClick to copy",td(ui, &f.source),tx(ui, state_label(&f.state)),td(ui, &f.detail),f.timestamp_ms)));
+                    let color = if f.value.is_some() { p.text } else { p.faint };
+                    let response = ui.add(
+                        Label::new(RichText::new(&value).font(regular(13.5)).color(color))
+                            .wrap()
+                            .sense(Sense::click()),
+                    );
+                    if response.clicked() {
+                        ui.ctx().copy_text(value.clone());
+                    }
+                    response.on_hover_text(td(
+                        ui,
+                        format!(
+                            "Source: {}\nState: {}\n{}\nSample: {} ms since Unix epoch\nClick to copy",
+                            td(ui, &f.source),
+                            tx(ui, state_label(&f.state)),
+                            td(ui, &f.detail),
+                            f.timestamp_ms
+                        ),
+                    ));
                 });
-            });ui.add_space(5.);
+            });
+            ui.add_space(6.);
         }
     });
 }
+
 fn reading_row(ui: &mut Ui, label: &str, r: &Reading) {
+    let p = palette(ui);
     let value = reading_text(ui, r);
     let width = ui.available_width();
     if width < 280. {
-        ui.label(RichText::new(td(ui, label)).color(muted(ui)).size(13.));
+        muted(ui, td(ui, label), 13.5);
         numeric_value(ui, &value, width, 14.).on_hover_text(td(
             ui,
             format!(
@@ -3070,18 +2025,10 @@ fn reading_row(ui: &mut Ui, label: &str, r: &Reading) {
         return;
     }
     ui.horizontal(|ui| {
-        let label_width = (width - 190.).max(80.);
-        ui.allocate_ui_with_layout(
-            vec2(label_width, 28.),
-            Layout::left_to_right(Align::Center),
-            |ui| {
-                ui.set_width(label_width);
-                ui.add(
-                    Label::new(RichText::new(td(ui, label)).color(muted(ui)).size(13.)).truncate(),
-                );
-            },
-        );
-        numeric_value(ui, &value, 180., 14.).on_hover_text(td(
+        let value_width = 180f32.min(width * 0.45);
+        let label_width = width - value_width - ui.spacing().item_spacing.x;
+        muted_line(ui, &td(ui, label), label_width, p.muted);
+        numeric_value(ui, &value, value_width, 14.).on_hover_text(td(
             ui,
             format!(
                 "{}\n{} · {}\n{} ms since Unix epoch\nLast value: {}",
@@ -3096,52 +2043,25 @@ fn reading_row(ui: &mut Ui, label: &str, r: &Reading) {
         ));
     });
 }
-fn reading_text(ui: &Ui, reading: &Reading) -> String {
-    if reading.state == Availability::Valid {
-        reading.value.map(|v| number(ui, v, &reading.unit))
-    } else {
-        None
-    }
-    .unwrap_or_else(|| tx(ui, availability(&reading.state)))
-}
-/// A reading's state as a word, for tooltips and diagnostics.
-fn state_label(state: &Availability) -> &'static str {
-    match state {
-        Availability::Valid => "Valid",
-        _ => availability(state),
-    }
-}
-fn availability(state: &Availability) -> &'static str {
-    match state {
-        Availability::Unsupported => "Unsupported",
-        Availability::PermissionRequired => "Permission required",
-        Availability::Failed => "Provider failed",
-        Availability::Stale => "Stale",
-        _ => "Unavailable",
-    }
-}
-fn numeric_value(ui: &mut Ui, text: &str, width: f32, size: f32) -> Response {
-    let galley = ui.painter().layout(
-        text.into(),
-        FontId::monospace(size),
-        ui.visuals().text_color(),
-        width.max(1.),
-    );
-    let (rect, response) =
-        ui.allocate_exact_size(vec2(width, galley.size().y.max(26.)), Sense::click());
-    ui.painter().with_clip_rect(rect).galley(
-        pos2(
-            rect.right() - galley.size().x,
-            rect.center().y - galley.size().y * 0.5,
-        ),
+
+/// One line of text cut to `width`, the whole text on hover when cut.
+fn muted_line(ui: &mut Ui, text: &str, width: f32, color: Color32) -> Response {
+    let mut job = text::LayoutJob::simple_singleline(text.to_owned(), regular(13.5), color);
+    job.wrap = text::TextWrapping::truncate_at_width(width);
+    let galley = ui.fonts_mut(|fonts| fonts.layout_job(job));
+    let (rect, response) = ui.allocate_exact_size(vec2(width, 28.), Sense::hover());
+    let cut = galley.elided;
+    ui.painter().galley(
+        pos2(rect.left(), rect.center().y - galley.size().y / 2.),
         galley,
-        ui.visuals().text_color(),
+        color,
     );
     response.widget_info(|| WidgetInfo::labeled(WidgetType::Label, true, text));
-    if response.clicked() {
-        ui.ctx().copy_text(text.into());
+    if cut {
+        response.on_hover_text(text)
+    } else {
+        response
     }
-    response
 }
 
 fn sensor_table(
@@ -3151,19 +2071,22 @@ fn sensor_table(
     history: &std::collections::VecDeque<Telemetry>,
     adapter: &str,
 ) {
+    let p = palette(ui);
     let width = ui.available_width();
     if width < 520. {
         ui.push_id(id, |ui| {
             for (index, (name, reading)) in readings.iter().enumerate() {
                 if index > 0 {
-                    ui.separator();
+                    divider(ui);
+                    ui.add_space(4.);
                 }
                 reading_row(ui, name, reading);
                 let (min, max) = sensor_extrema(history, adapter, name);
                 ui.horizontal_wrapped(|ui| {
                     for (label, value) in [("Min", min), ("Max", max)] {
-                        ui.label(
-                            RichText::new(td(
+                        caption(
+                            ui,
+                            td(
                                 ui,
                                 format!(
                                     "{} {}",
@@ -3172,19 +2095,16 @@ fn sensor_table(
                                         .map(|v| number(ui, v, &reading.unit))
                                         .unwrap_or("—".into())
                                 ),
-                            ))
-                            .size(12.)
-                            .monospace()
-                            .color(muted(ui)),
+                            ),
                         );
                     }
                 });
-                ui.add_space(8.);
+                ui.add_space(6.);
             }
         });
         return;
     }
-    let value_width = (width * 0.19).clamp(90., 170.);
+    let value_width = (width * 0.17).clamp(96., 140.);
     let row_height = [
         "Unsupported",
         "Permission required",
@@ -3195,82 +2115,97 @@ fn sensor_table(
     .iter()
     .map(|label| {
         ui.painter()
-            .layout(
-                tx(ui, label),
-                FontId::monospace(13.),
-                ui.visuals().text_color(),
-                value_width - 4.,
-            )
+            .layout(tx(ui, label), regular(13.5), p.text, value_width - 4.)
             .size()
             .y
             + 10.
     })
-    .fold(35.0f32, f32::max);
-    TableBuilder::new(ui)
-        .id_salt(id)
-        .vscroll(false)
-        .vertical_scroll_offset(0.)
-        .scroll_bar_visibility(scroll_area::ScrollBarVisibility::AlwaysHidden)
-        .column(Column::remainder())
-        .columns(Column::exact(value_width), 3)
-        .cell_layout(Layout::left_to_right(Align::Center))
-        .header(30., |mut row| {
-            for (index, label) in ["Sensor", "Current", "Minimum", "Maximum"]
-                .iter()
-                .enumerate()
-            {
-                row.col(|ui| {
-                    if index == 0 {
-                        caption(ui, tx(ui, *label));
-                    } else {
-                        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                            ui.add_space(4.);
-                            caption(ui, tx(ui, *label));
-                        });
-                    }
-                });
-            }
-        })
-        .body(|mut body| {
-            for (name, r) in readings {
-                body.row(row_height, |mut row| {
+    .fold(32.0f32, f32::max);
+    ui.push_id(id, |ui| {
+        ui.visuals_mut().widgets.hovered.bg_fill = p.hover;
+        ui.spacing_mut().item_spacing = vec2(0., 0.);
+        // Row dividers span the table, painted from the first cell within the
+        // page's clip, since each cell clips its own painting.
+        let lines = Painter::new(ui.ctx().clone(), ui.layer_id(), ui.clip_rect());
+        let table_x = ui.max_rect().x_range();
+        TableBuilder::new(ui)
+            .id_salt(id)
+            .vscroll(false)
+            .vertical_scroll_offset(0.)
+            .scroll_bar_visibility(scroll_area::ScrollBarVisibility::AlwaysHidden)
+            .column(Column::remainder())
+            .columns(Column::exact(value_width), 3)
+            .cell_layout(Layout::left_to_right(Align::Center))
+            .header(30., |mut row| {
+                for (index, label) in ["Sensor", "Current", "Minimum", "Maximum"]
+                    .iter()
+                    .enumerate()
+                {
                     row.col(|ui| {
-                        ui.add(Label::new(td(ui, name)).truncate())
-                            .on_hover_text(td(
-                                ui,
-                                format!("{}\n{}", td(ui, &r.source), td(ui, &r.detail)),
-                            ));
+                        let text = RichText::new(tx(ui, label))
+                            .font(medium(12.5))
+                            .color(p.faint);
+                        if index == 0 {
+                            ui.label(text);
+                        } else {
+                            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                                ui.add_space(4.);
+                                ui.label(text);
+                            });
+                        }
                     });
-                    row.col(|ui| {
-                        numeric_value(ui, &reading_text(ui, r), value_width - 4., 13.)
-                            .on_hover_text(td(
-                                ui,
-                                format!(
-                                    "{} · {}\n{}\nLast value: {}",
-                                    tx(ui, state_label(&r.state)),
-                                    td(ui, &r.source),
-                                    td(ui, &r.detail),
-                                    r.value
-                                        .map(|v| number(ui, v, &r.unit))
-                                        .unwrap_or("—".into())
-                                ),
-                            ));
-                    });
-                    let (min, max) = sensor_extrema(history, adapter, name);
-                    for value in [min, max] {
+                }
+            })
+            .body(|mut body| {
+                for (index, (name, r)) in readings.iter().enumerate() {
+                    body.row(row_height, |mut row| {
                         row.col(|ui| {
-                            numeric_value(
-                                ui,
-                                &value.map(|v| number(ui, v, &r.unit)).unwrap_or("—".into()),
-                                value_width - 4.,
-                                13.,
-                            );
+                            if index > 0 {
+                                lines.hline(
+                                    table_x,
+                                    ui.max_rect().top(),
+                                    Stroke::new(1.0_f32, p.divider),
+                                );
+                            }
+                            ui.add(Label::new(td(ui, name)).truncate())
+                                .on_hover_text(td(
+                                    ui,
+                                    format!("{}\n{}", td(ui, &r.source), td(ui, &r.detail)),
+                                ));
                         });
-                    }
-                });
-            }
-        });
+                        row.col(|ui| {
+                            numeric_value(ui, &reading_text(ui, r), value_width - 4., 13.5)
+                                .on_hover_text(td(
+                                    ui,
+                                    format!(
+                                        "{} · {}\n{}\nLast value: {}",
+                                        tx(ui, state_label(&r.state)),
+                                        td(ui, &r.source),
+                                        td(ui, &r.detail),
+                                        r.value
+                                            .map(|v| number(ui, v, &r.unit))
+                                            .unwrap_or("—".into())
+                                    ),
+                                ));
+                        });
+                        let (min, max) = sensor_extrema(history, adapter, name);
+                        for value in [min, max] {
+                            row.col(|ui| {
+                                numeric_value_in(
+                                    ui,
+                                    &value.map(|v| number(ui, v, &r.unit)).unwrap_or("—".into()),
+                                    value_width - 4.,
+                                    13.5,
+                                    p.muted,
+                                );
+                            });
+                        }
+                    });
+                }
+            });
+    });
 }
+
 fn sensor_extrema(
     history: &std::collections::VecDeque<Telemetry>,
     adapter: &str,
@@ -3283,13 +2218,7 @@ fn sensor_extrema(
         .filter_map(|s| gpu_reading(s, adapter, name).and_then(|r| r.value));
     (values.clone().reduce(f64::min), values.reduce(f64::max))
 }
-fn number(ui: &Ui, v: f64, unit: &str) -> String {
-    if unit == "B" || unit == "bytes" {
-        ui_bytes(ui, v.max(0.) as u64)
-    } else {
-        format!("{} {}", i18n::language(ui).decimal(v, 1), tx(ui, unit))
-    }
-}
+
 fn memory_percent(s: &Telemetry) -> Option<f64> {
     let total = s.memory_total.value?;
     if total <= 0. {
@@ -3298,6 +2227,7 @@ fn memory_percent(s: &Telemetry) -> Option<f64> {
         Some(s.memory_used.value? / total * 100.)
     }
 }
+
 fn gpu_reading<'a>(s: &'a Telemetry, id: &str, label: &str) -> Option<&'a Reading> {
     s.gpus
         .iter()
@@ -3307,241 +2237,14 @@ fn gpu_reading<'a>(s: &'a Telemetry, id: &str, label: &str) -> Option<&'a Readin
         .find(|(l, _)| l == label)
         .map(|(_, r)| r)
 }
-fn metric_chart(
-    ui: &mut Ui,
-    label: &str,
-    points: &[(u64, Option<f64>)],
-    unit: &str,
-    max: f64,
-    color: Color32,
-    height: f32,
-) {
-    MetricChart {
-        label,
-        points,
-        unit,
-        max,
-        color,
-        height,
-        secondary: None,
-    }
-    .show(ui);
-}
 
-struct MetricChart<'a> {
-    label: &'a str,
-    points: &'a [(u64, Option<f64>)],
-    unit: &'a str,
-    max: f64,
-    color: Color32,
-    height: f32,
-    secondary: Option<(&'a str, Option<&'a Reading>)>,
-}
-
-impl MetricChart<'_> {
-    fn show(self, ui: &mut Ui) {
-        let Self {
-            label,
-            points,
-            unit,
-            max,
-            color,
-            height,
-            secondary,
-        } = self;
-        let color = accent(ui, color);
-        Frame::new()
-            .fill(ui.visuals().faint_bg_color)
-            .corner_radius(12)
-            .inner_margin(16)
-            .show(ui, |ui| {
-                ui.set_min_width(ui.available_width());
-                let stale = points
-                    .last()
-                    .is_some_and(|p| now_ms().saturating_sub(p.0) > 5000);
-                ui.horizontal(|ui| {
-                    ui.label(RichText::new(tx(ui, label)).size(13.).color(muted(ui)));
-                    if stale {
-                        caption(ui, tx(ui, "Stale"));
-                    }
-                    if let Some((label, _)) = secondary {
-                        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                            ui.label(RichText::new(tx(ui, label)).size(13.).color(muted(ui)));
-                        });
-                    }
-                });
-                let value = points
-                    .last()
-                    .and_then(|(_, v)| *v)
-                    .map(|v| i18n::language(ui).decimal(v, 1))
-                    .unwrap_or("—".into());
-                let (rect, _) =
-                    ui.allocate_exact_size(vec2(ui.available_width(), 40.), Sense::hover());
-                let mut primary_rect = rect;
-                if let Some((label, reading)) = secondary {
-                    let secondary_rect =
-                        Rect::from_min_max(pos2(rect.right() - 100., rect.top()), rect.max);
-                    primary_rect.max.x = secondary_rect.left() - 12.;
-                    let current = reading
-                        .filter(|r| r.state == Availability::Valid)
-                        .and_then(|r| r.value);
-                    let text = current
-                        .map(|v| i18n::language(ui).decimal(v, 1))
-                        .unwrap_or("—".into());
-                    let unit = if current.is_some() {
-                        reading.map(|r| r.unit.as_str()).unwrap_or("")
-                    } else {
-                        ""
-                    };
-                    paint_metric_value(ui, secondary_rect, &text, unit, 22., Align::Max);
-                    let response = ui.interact(
-                        secondary_rect,
-                        ui.make_persistent_id(("metric-secondary", label)),
-                        Sense::hover(),
-                    );
-                    let status = reading
-                        .map(|r| reading_text(ui, r))
-                        .unwrap_or_else(|| tx(ui, "Unavailable"));
-                    let accessible_label = format!("{}: {status}", tx(ui, label));
-                    response.widget_info(|| {
-                        WidgetInfo::labeled(WidgetType::Label, true, &accessible_label)
-                    });
-                    response.on_hover_text(
-                        reading
-                            .map(|r| {
-                                format!("{status}\n{}\n{}", td(ui, &r.source), td(ui, &r.detail))
-                            })
-                            .unwrap_or_else(|| tx(ui, "No temperature provider reading")),
-                    );
-                }
-                paint_metric_value(ui, primary_rect, &value, unit, 28., Align::Min);
-                let response = ui.interact(
-                    primary_rect,
-                    ui.make_persistent_id(("metric-value", label)),
-                    Sense::hover(),
-                );
-                let accessible_label = format!(
-                    "{}: {value} {unit}{}",
-                    tx(ui, label),
-                    if stale {
-                        tx(ui, " (stale)")
-                    } else {
-                        String::new()
-                    }
-                );
-                response.widget_info(|| {
-                    WidgetInfo::labeled(WidgetType::Label, true, &accessible_label)
-                });
-                let (rect, response) = ui
-                    .allocate_exact_size(vec2(ui.available_width(), height - 65.), Sense::hover());
-                let rect = rect.shrink2(vec2(1., 9.));
-                let p = ui.painter();
-                for step in [0., 0.5, 1.] {
-                    let y = rect.bottom() - rect.height() * step;
-                    p.line_segment(
-                        [pos2(rect.left(), y), pos2(rect.right(), y)],
-                        Stroke::new(1.0f32, ui.visuals().widgets.noninteractive.bg_stroke.color),
-                    );
-                }
-                let end = now_ms();
-                let start = end.saturating_sub(120_000);
-                let mut prior: Option<(u64, Pos2)> = None;
-                for (time, value) in points {
-                    if let Some(v) = value {
-                        let x = rect.left()
-                            + ((*time as f64 - start as f64) / 120_000.).clamp(0., 1.) as f32
-                                * rect.width();
-                        let y = rect.bottom() - (*v / max).clamp(0., 1.) as f32 * rect.height();
-                        let point = pos2(x, y);
-                        if let Some((last, previous)) = prior
-                            && time.saturating_sub(last) <= 2500
-                        {
-                            p.line_segment([previous, point], Stroke::new(1.8f32, color));
-                        }
-                        prior = Some((*time, point));
-                    } else {
-                        prior = None;
-                    }
-                }
-                if let Some((_, point)) = prior {
-                    p.circle_filled(point, 2.5, color);
-                }
-                ui.horizontal(|ui| {
-                    ui.label(RichText::new(tx(ui, "−120 s")).size(11.).color(muted(ui)));
-                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        ui.label(
-                            RichText::new(td(ui, format!("now · 0–{max:.0} {unit}")))
-                                .size(11.)
-                                .color(muted(ui)),
-                        );
-                    });
-                });
-                let values: Vec<_> = points.iter().filter_map(|(_, v)| *v).collect();
-                if !values.is_empty() {
-                    response.on_hover_text(td(
-                        ui,
-                        format!(
-                            "{} samples\nMin {} {} · Max {} {}\nMissing samples create gaps",
-                            i18n::language(ui).integer(values.len() as u64),
-                            i18n::language(ui)
-                                .decimal(values.iter().copied().fold(f64::INFINITY, f64::min), 1),
-                            unit,
-                            i18n::language(ui).decimal(
-                                values.iter().copied().fold(f64::NEG_INFINITY, f64::max),
-                                1
-                            ),
-                            unit
-                        ),
-                    ));
-                } else {
-                    response.on_hover_text(tx(ui, "No valid samples available from this provider"));
-                }
-            });
-    }
-}
-
-fn paint_metric_value(ui: &Ui, rect: Rect, value: &str, unit: &str, size: f32, align: Align) {
-    let mut job = egui::text::LayoutJob::default();
-    job.append(
-        value,
-        0.,
-        TextFormat {
-            font_id: FontId::monospace(size),
-            color: ui.visuals().text_color(),
-            valign: Align::BOTTOM,
-            ..Default::default()
-        },
-    );
-    if !unit.is_empty() {
-        job.append(
-            unit,
-            4.,
-            TextFormat {
-                font_id: FontId::proportional(13.),
-                color: muted(ui),
-                valign: Align::BOTTOM,
-                ..Default::default()
-            },
-        );
-    }
-    let galley = ui.painter().layout_job(job);
-    let x = if align == Align::Max {
-        rect.right() - galley.size().x
-    } else {
-        rect.left()
-    };
-    let y = rect.center().y - galley.size().y * 0.5;
-    ui.painter()
-        .with_clip_rect(rect)
-        .galley(pos2(x, y), galley, ui.visuals().text_color());
-}
 fn diagnostic_field(ui: &mut Ui, f: &Field) {
     ui.label(
         RichText::new(td(
             ui,
             format!("{}: {}", td(ui, &f.label), field_display(ui, f)),
         ))
-        .strong(),
+        .font(medium(14.)),
     );
     caption(
         ui,
@@ -3556,10 +2259,11 @@ fn diagnostic_field(ui: &mut Ui, f: &Field) {
         ),
     );
     if !f.detail.is_empty() {
-        ui.label(td(ui, &f.detail));
+        ui.add(Label::new(RichText::new(td(ui, &f.detail)).color(palette(ui).muted)).wrap());
     }
     ui.add_space(10.);
 }
+
 fn reading_diagnostic(ui: &mut Ui, label: &str, r: &Reading) {
     reading_row(ui, label, r);
     caption(
@@ -3575,578 +2279,6 @@ fn reading_diagnostic(ui: &mut Ui, label: &str, r: &Reading) {
         ),
     );
     ui.add_space(10.);
-}
-fn node_size(ui: &Ui, node: &crate::storage::ScanNode, allocated: bool) -> String {
-    let value = if allocated {
-        node.allocated
-    } else {
-        node.logical
-    };
-    if node.incomplete {
-        if node.is_dir || value > 0 {
-            format!("≥ {}", ui_bytes(ui, value))
-        } else {
-            tx(ui, "Unavailable")
-        }
-    } else {
-        ui_bytes(ui, value)
-    }
-}
-fn share(part: u64, total: u64) -> f64 {
-    if total == 0 {
-        0.
-    } else {
-        part as f64 / total as f64 * 100.
-    }
-}
-#[derive(Clone, Copy)]
-enum EntryAction {
-    Reveal(usize),
-    CopyPath(usize),
-    Open(usize),
-}
-/// Right-click menu shared by table rows, names and map tiles. It acts on the
-/// entry that was right-clicked, even when rows re-sort beneath the open menu.
-fn entry_menu(
-    response: &Response,
-    nodes: &[crate::storage::ScanNode],
-    id: usize,
-    action: &mut Option<EntryAction>,
-) {
-    let target = Id::new("entry-menu-target");
-    if response.secondary_clicked() || response.long_touched() {
-        response.ctx.data_mut(|data| data.insert_temp(target, id));
-    }
-    response.context_menu(|ui| {
-        let id = ui.ctx().data(|data| data.get_temp(target)).unwrap_or(id);
-        let Some(node) = nodes.get(id) else {
-            return;
-        };
-        if ui.button(tx(ui, REVEAL)).clicked() {
-            *action = Some(EntryAction::Reveal(node.id));
-            ui.close();
-        }
-        if ui.button(tx(ui, "Copy path")).clicked() {
-            *action = Some(EntryAction::CopyPath(node.id));
-            ui.close();
-        }
-        if node.is_dir && ui.button(tx(ui, "Open folder")).clicked() {
-            *action = Some(EntryAction::Open(node.id));
-            ui.close();
-        }
-    });
-}
-/// A folder with an outgoing arrow, drawn on the app's 24-unit icon grid.
-fn reveal_button(ui: &mut Ui, name: &str) -> Response {
-    let label = format!("{} {name}", tx(ui, REVEAL));
-    let response = ui.add_sized([28., 28.], Button::new("").frame(false));
-    response.widget_info(|| WidgetInfo::labeled(WidgetType::Button, ui.is_enabled(), &label));
-    let color = if response.hovered() {
-        ui.visuals().text_color()
-    } else {
-        muted(ui)
-    };
-    let r = Rect::from_center_size(response.rect.center(), vec2(18., 18.));
-    let scale = r.width() / 24.;
-    let stroke = Stroke::new(1.8 * scale, color);
-    let point = |x: f32, y: f32| r.min + vec2(x, y) * scale;
-    let p = ui.painter();
-    p.add(Shape::line(
-        vec![
-            point(12., 20.),
-            point(3., 20.),
-            point(3., 5.),
-            point(9., 5.),
-            point(11., 7.5),
-            point(20., 7.5),
-            point(20., 11.),
-        ],
-        stroke,
-    ));
-    p.line_segment([point(14., 19.), point(21., 12.)], stroke);
-    p.add(Shape::line(
-        vec![point(16., 12.), point(21., 12.), point(21., 17.)],
-        stroke,
-    ));
-    response.on_hover_text(label)
-}
-fn scan_status(state: &State) -> String {
-    let lang = state.settings.language.resolve();
-    if let Some(s) = &state.summary {
-        // Refused and locked entries are expected on system drives: protected
-        // folders need an administrator, files Windows holds open keep lower
-        // bounds. Only other errors make a scan partial.
-        let other = s.errors.saturating_sub(s.denied.saturating_add(s.locked));
-        let status = if s.cancelled {
-            "Partial · cancelled"
-        } else if s.stopped_early {
-            "Partial · stopped early"
-        } else if other > 0 {
-            "Partial"
-        } else if s.denied > 0 || s.skipped_cloud > 0 || s.skipped_reparse > 0 {
-            "Complete with exclusions"
-        } else {
-            "Complete"
-        };
-        let mut text = lang.format(
-            "{0} · {1} s",
-            &[
-                lang.text(status),
-                lang.decimal(s.elapsed_ms as f64 / 1000., 2),
-            ],
-        );
-        if s.denied > 0 {
-            text += " · ";
-            text += &lang.format("{0} need administrator rights", &[lang.integer(s.denied)]);
-        }
-        if other > 0 {
-            text += " · ";
-            text += &lang.format("{0} errors", &[lang.integer(other)]);
-        }
-        text
-    } else if let Some(scan) = &state.scan {
-        let status = if scan.cancel.load(std::sync::atomic::Ordering::Relaxed) {
-            "Cancelling"
-        } else {
-            "Scanning"
-        };
-        lang.format(
-            "{0} · {1} entries · {2} s",
-            &[
-                lang.text(status),
-                lang.integer(state.nodes.len() as u64),
-                lang.decimal(state.scan_started.elapsed().as_secs_f64(), 1),
-            ],
-        )
-    } else {
-        lang.text("No scan")
-    }
-}
-
-/// Whether this process already has administrator rights.
-#[cfg(windows)]
-fn elevated() -> bool {
-    use windows::Win32::{
-        Foundation::{CloseHandle, HANDLE},
-        Security::{GetTokenInformation, TOKEN_ELEVATION, TOKEN_QUERY, TokenElevation},
-        System::Threading::{GetCurrentProcess, OpenProcessToken},
-    };
-    static ELEVATED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ELEVATED.get_or_init(|| unsafe {
-        let mut token = HANDLE::default();
-        if OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token).is_err() {
-            return false;
-        }
-        let mut elevation = TOKEN_ELEVATION::default();
-        let mut size = 0;
-        let queried = GetTokenInformation(
-            token,
-            TokenElevation,
-            Some((&mut elevation as *mut TOKEN_ELEVATION).cast()),
-            size_of::<TOKEN_ELEVATION>() as u32,
-            &mut size,
-        );
-        let _ = CloseHandle(token);
-        queried.is_ok() && elevation.TokenIsElevated != 0
-    })
-}
-/// Starts this executable again with administrator rights, scanning `path`.
-/// Windows asks the user for consent; declining returns an error.
-#[cfg(windows)]
-fn relaunch_elevated(path: &std::path::Path) -> Result<(), String> {
-    use std::os::windows::ffi::OsStrExt;
-    use windows::{
-        Win32::UI::{Shell::ShellExecuteW, WindowsAndMessaging::SW_SHOWNORMAL},
-        core::{PCWSTR, w},
-    };
-    let wide = |s: &std::ffi::OsStr| s.encode_wide().chain(Some(0)).collect::<Vec<u16>>();
-    let executable = std::env::current_exe().map_err(|error| error.to_string())?;
-    let parameters = wide(scan_argument(path)?.as_ref());
-    let executable = wide(executable.as_os_str());
-    let result = unsafe {
-        ShellExecuteW(
-            None,
-            w!("runas"),
-            PCWSTR(executable.as_ptr()),
-            PCWSTR(parameters.as_ptr()),
-            PCWSTR::null(),
-            SW_SHOWNORMAL,
-        )
-    };
-    // Values above 32 mean success; lower values are ShellExecute error codes.
-    if result.0 as usize > 32 {
-        Ok(())
-    } else {
-        Err("Administrator scan was not started".into())
-    }
-}
-/// `--scan "path"` for a Windows command line. Paths cannot contain quotes;
-/// backslashes before the closing quote are doubled so it stays a quote.
-#[cfg(windows)]
-fn scan_argument(path: &std::path::Path) -> Result<std::ffi::OsString, String> {
-    let text = path
-        .to_str()
-        .ok_or("Path cannot be passed to a new process")?;
-    if text.contains(['"', '\0']) {
-        return Err("Path cannot be passed to a new process".into());
-    }
-    let trailing = text.len() - text.trim_end_matches('\\').len();
-    Ok(format!("--scan \"{text}{}\"", "\\".repeat(trailing)).into())
-}
-#[cfg(windows)]
-fn reveal(path: &std::path::Path) -> Result<(), String> {
-    explorer_command(path)?
-        .spawn()
-        .map(|_| ())
-        .map_err(|e| e.to_string())
-}
-#[cfg(windows)]
-fn explorer_command(path: &std::path::Path) -> Result<std::process::Command, String> {
-    use std::os::windows::ffi::{OsStrExt, OsStringExt};
-    use windows::Win32::System::SystemInformation::GetWindowsDirectoryW;
-    let path = std::path::absolute(path).map_err(|error| error.to_string())?;
-    if path
-        .as_os_str()
-        .encode_wide()
-        .any(|unit| unit == 0 || unit == b'"' as u16)
-    {
-        return Err("Path cannot be passed to Explorer".into());
-    }
-    let mut directory = vec![0u16; 32768];
-    // Obtain the trusted OS location, independent of PATH and the working directory.
-    let length = unsafe { GetWindowsDirectoryW(Some(&mut directory)) } as usize;
-    if length == 0 || length >= directory.len() {
-        return Err("Windows directory is unavailable".into());
-    }
-    let executable =
-        PathBuf::from(std::ffi::OsString::from_wide(&directory[..length])).join("explorer.exe");
-    let mut argument = std::ffi::OsString::from("/select,\"");
-    argument.push(path.as_os_str());
-    // A root such as `C:\` ends in a backslash, which would escape the
-    // closing quote; doubled, it stays a backslash.
-    let units: Vec<u16> = path.as_os_str().encode_wide().collect();
-    let trailing = units
-        .iter()
-        .rev()
-        .take_while(|&&unit| unit == u16::from(b'\\'))
-        .count();
-    argument.push("\\".repeat(trailing));
-    argument.push("\"");
-    let mut command = std::process::Command::new(executable);
-    command.raw_arg(argument);
-    Ok(command)
-}
-#[cfg(windows)]
-use std::os::windows::process::CommandExt;
-
-/// Administrator scans rely on the Windows consent prompt; other systems never offer them.
-#[cfg(not(windows))]
-fn elevated() -> bool {
-    true
-}
-#[cfg(not(windows))]
-fn relaunch_elevated(_: &std::path::Path) -> Result<(), String> {
-    Err("Administrator scan was not started".into())
-}
-/// Opens the file manager with `path` selected.
-#[cfg(not(windows))]
-fn reveal(path: &std::path::Path) -> Result<(), String> {
-    let mut child = file_manager_command(path)?
-        .spawn()
-        .map_err(|e| e.to_string())?;
-    // Collect the exit status, or every reveal would leave a zombie process.
-    std::thread::spawn(move || child.wait());
-    Ok(())
-}
-#[cfg(not(windows))]
-fn file_manager_command(path: &std::path::Path) -> Result<std::process::Command, String> {
-    let path = std::path::absolute(path).map_err(|error| error.to_string())?;
-    // An absolute executable avoids PATH lookup; `--` stops option parsing.
-    #[cfg(target_os = "macos")]
-    let command = {
-        let mut command = std::process::Command::new("/usr/bin/open");
-        command.arg("-R").arg("--").arg(&path);
-        command
-    };
-    #[cfg(not(target_os = "macos"))]
-    let command = {
-        let folder = if path.is_dir() {
-            path.clone()
-        } else {
-            path.parent().map(PathBuf::from).unwrap_or(path.clone())
-        };
-        let mut command = std::process::Command::new("/usr/bin/xdg-open");
-        command.arg(folder);
-        command
-    };
-    Ok(command)
-}
-#[cfg(target_os = "macos")]
-const PLATFORM_LABEL: &str = concat!("v", env!("CARGO_PKG_VERSION"), "  ·  macOS");
-#[cfg(windows)]
-const PLATFORM_LABEL: &str = concat!("v", env!("CARGO_PKG_VERSION"), "  ·  Windows x64");
-#[cfg(not(any(windows, target_os = "macos")))]
-const PLATFORM_LABEL: &str = concat!("v", env!("CARGO_PKG_VERSION"), "  ·  Linux");
-/// The key that switches pages: Ctrl on Windows, Command on macOS.
-const COMMAND_KEY: &str = if cfg!(target_os = "macos") {
-    "⌘"
-} else {
-    "Ctrl"
-};
-const NO_GPU: &str = if cfg!(windows) {
-    "No graphics adapters reported by DXGI"
-} else {
-    "No graphics adapters reported by the system"
-};
-const REVEAL: &str = if cfg!(target_os = "macos") {
-    "Show in Finder"
-} else {
-    "Reveal in Explorer"
-};
-const PATH_HINT: &str = if cfg!(windows) {
-    "C:\\ or a folder path"
-} else {
-    "/ or a folder path"
-};
-
-fn navigation(ui: &mut Ui, label: &str, key: &str, selected: bool, kind: usize) -> bool {
-    let translated = tx(ui, label);
-    let label = translated.as_str();
-    let (rect, response) = ui.allocate_exact_size(vec2(ui.available_width(), 40.), Sense::click());
-    response.widget_info(|| WidgetInfo::labeled(WidgetType::SelectableLabel, true, label));
-    if selected || response.hovered() {
-        ui.painter().rect_filled(
-            rect,
-            7,
-            if selected {
-                ui.visuals().selection.bg_fill
-            } else {
-                ui.visuals().widgets.hovered.bg_fill
-            },
-        );
-    }
-    if response.has_focus() {
-        ui.painter()
-            .rect_stroke(rect, 7, ui.visuals().selection.stroke, StrokeKind::Inside);
-    }
-    if selected {
-        ui.painter().rect_filled(
-            Rect::from_center_size(pos2(rect.left() + 2., rect.center().y), vec2(2., 18.)),
-            1,
-            ui.visuals().text_color(),
-        );
-    }
-    let color = if selected {
-        ui.visuals().text_color()
-    } else {
-        muted(ui)
-    };
-    icon(
-        ui.painter(),
-        Rect::from_min_size(rect.left_center() + vec2(10., -11.), vec2(22., 22.)),
-        kind,
-        color,
-    );
-    ui.painter().text(
-        rect.left_center() + vec2(42., 0.),
-        Align2::LEFT_CENTER,
-        label,
-        FontId::proportional(14.),
-        ui.visuals().text_color(),
-    );
-    let label_width = ui
-        .painter()
-        .layout_no_wrap(
-            label.into(),
-            FontId::proportional(14.),
-            ui.visuals().text_color(),
-        )
-        .size()
-        .x;
-    // Long translations keep their full name; shortcuts remain in the tooltip.
-    if !key.is_empty() && label_width + 76. <= rect.width() {
-        ui.painter().text(
-            rect.right_center() - vec2(9., 0.),
-            Align2::RIGHT_CENTER,
-            key,
-            FontId::monospace(10.),
-            muted(ui),
-        );
-    }
-    response
-        .on_hover_text(if key.is_empty() {
-            label.to_owned()
-        } else {
-            format!("{label} · {}+{key}", tx(ui, COMMAND_KEY))
-        })
-        .clicked()
-}
-fn folder_toggle(ui: &mut Ui, name: &str, expanded: bool) -> Response {
-    let label = format!(
-        "{} {name}",
-        tx(ui, if expanded { "Collapse" } else { "Expand" })
-    );
-    let response = ui.add_sized([28., 28.], Button::new("").frame(false));
-    response.widget_info(|| WidgetInfo::labeled(WidgetType::Button, ui.is_enabled(), &label));
-    let c = response.rect.center();
-    let points = if expanded {
-        vec![c + vec2(-5., -2.5), c + vec2(0., 2.5), c + vec2(5., -2.5)]
-    } else {
-        vec![c + vec2(-2.5, -5.), c + vec2(2.5, 0.), c + vec2(-2.5, 5.)]
-    };
-    ui.painter().add(Shape::line(
-        points,
-        Stroke::new(2.0_f32, ui.visuals().text_color()),
-    ));
-    response.on_hover_text(tx(ui, label))
-}
-fn icon(p: &Painter, r: Rect, kind: usize, color: Color32) {
-    // One 24-unit grid, optical size and rounded stroke treatment throughout.
-    let scale = r.width() / 24.;
-    let s = Stroke::new(1.8 * scale, color);
-    let point = |x: f32, y: f32| r.min + vec2(x, y) * scale;
-    let outline = |x: f32, y: f32, w: f32, h: f32, radius: f32| {
-        p.rect_stroke(
-            Rect::from_min_max(point(x, y), point(x + w, y + h)),
-            CornerRadius::same((radius * scale).round() as u8),
-            s,
-            StrokeKind::Middle,
-        );
-    };
-    let line = |points: &[(f32, f32)]| {
-        let points: Vec<_> = points.iter().map(|&(x, y)| point(x, y)).collect();
-        p.add(Shape::line(points.clone(), s));
-        for point in points {
-            p.circle_filled(point, s.width / 2., color);
-        }
-    };
-    match kind {
-        0 => {
-            outline(2., 4., 20., 16., 2.);
-            line(&[(9., 4.), (9., 20.)]);
-            line(&[(9., 12.), (22., 12.)]);
-        }
-        1 => {
-            outline(6., 6., 12., 12., 2.);
-            outline(9., 9., 6., 6., 1.);
-            for i in [9., 15.] {
-                line(&[(i, 2.), (i, 6.)]);
-                line(&[(i, 18.), (i, 22.)]);
-                line(&[(2., i), (6., i)]);
-                line(&[(18., i), (22., i)]);
-            }
-        }
-        2 => {
-            outline(4., 6., 18., 11., 2.);
-            line(&[(2., 3.), (2., 20.), (5., 20.)]);
-            for x in [8., 11.] {
-                line(&[(x, 17.), (x, 20.)]);
-            }
-            line(&[(7., 9.5), (7., 13.5)]);
-            p.circle_stroke(point(16., 11.5), 3. * scale, s);
-            p.circle_filled(point(16., 11.5), 0.8 * scale, color);
-        }
-        3 => {
-            outline(4., 3., 16., 18., 3.);
-            line(&[(4., 14.), (20., 14.)]);
-            line(&[(7., 17.5), (10., 17.5)]);
-            p.circle_filled(point(16., 17.5), 0.9 * scale, color);
-        }
-        4 => {
-            line(&[
-                (2., 13.),
-                (7., 13.),
-                (10., 6.),
-                (14., 19.),
-                (17., 13.),
-                (22., 13.),
-            ]);
-        }
-        _ => {
-            for (x, y) in [(8., 5.), (16., 12.), (10., 19.)] {
-                line(&[(2., y), (x - 2.5, y)]);
-                line(&[(x + 2.5, y), (22., y)]);
-                p.circle_stroke(point(x, y), 2.5 * scale, s);
-            }
-        }
-    }
-}
-fn tile_color(id: usize, dark: bool) -> Color32 {
-    let colors = if dark {
-        [
-            (60, 79, 73),
-            (60, 71, 85),
-            (87, 77, 58),
-            (76, 69, 86),
-            (65, 79, 83),
-            (87, 66, 65),
-        ]
-    } else {
-        [
-            (69, 97, 86),
-            (70, 92, 119),
-            (115, 97, 63),
-            (96, 79, 112),
-            (70, 99, 109),
-            (116, 79, 74),
-        ]
-    };
-    let (r, g, b) = colors[id % colors.len()];
-    Color32::from_rgb(r, g, b)
-}
-
-// Balanced binary subdivision: O(n log n), no zero-area hit targets or fictitious weights.
-pub fn treemap_tiles(
-    ids: &[usize],
-    nodes: &[crate::storage::ScanNode],
-    rect: Rect,
-) -> Vec<(usize, Rect)> {
-    fn split(
-        ids: &[usize],
-        nodes: &[crate::storage::ScanNode],
-        rect: Rect,
-        out: &mut Vec<(usize, Rect)>,
-    ) {
-        if ids.is_empty() {
-            return;
-        }
-        if ids.len() == 1 {
-            out.push((ids[0], rect));
-            return;
-        }
-        let total: f64 = ids.iter().map(|id| nodes[*id].allocated as f64).sum();
-        if total <= 0. {
-            return;
-        }
-        let mut sum = 0.;
-        let mut cut = 1;
-        for (i, id) in ids.iter().enumerate().take(ids.len() - 1) {
-            sum += nodes[*id].allocated as f64;
-            cut = i + 1;
-            if sum >= total / 2. {
-                break;
-            }
-        }
-        let fraction = (sum / total) as f32;
-        let (a, b) = if rect.width() >= rect.height() {
-            let x = rect.left() + rect.width() * fraction;
-            (
-                Rect::from_min_max(rect.min, pos2(x, rect.bottom())),
-                Rect::from_min_max(pos2(x, rect.top()), rect.max),
-            )
-        } else {
-            let y = rect.top() + rect.height() * fraction;
-            (
-                Rect::from_min_max(rect.min, pos2(rect.right(), y)),
-                Rect::from_min_max(pos2(rect.left(), y), rect.max),
-            )
-        };
-        split(&ids[..cut], nodes, a, out);
-        split(&ids[cut..], nodes, b, out);
-    }
-    let mut out = Vec::new();
-    split(ids, nodes, rect, &mut out);
-    out
 }
 
 #[cfg(test)]

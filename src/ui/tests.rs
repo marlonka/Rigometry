@@ -2,6 +2,7 @@
 //! fixtures are real; hardware fixtures isolate layout from live sampling.
 
 use super::*;
+use crate::state::{Sort, View};
 use egui::accesskit::Role;
 use egui_kittest::{
     Harness,
@@ -79,6 +80,13 @@ fn set_window_pixels(harness: &mut Harness<'_, App>, pixels: Vec2) {
     // AccessKit bounds use physical pixels, including the app's zoom factor.
     harness.set_size(pixels / harness.ctx.pixels_per_point());
     harness.run_steps(3);
+}
+
+/// Component harnesses install the bundled fonts on their first frame and
+/// draw from the next, once the weights they use are available.
+fn fonts_installed(ui: &Ui) -> bool {
+    theme::install_fonts(ui.ctx());
+    theme::fonts_ready(ui.ctx())
 }
 
 fn click(harness: &Harness<'_, App>, role: Role, label: &str) {
@@ -207,7 +215,7 @@ fn primary_views_support_accessible_navigation_keyboard_and_minimum_size() {
     navigate(&mut harness, "GPU");
     assert_eq!(harness.state().state.settings.page, Page::Gpu);
     harness.state_mut().state.settings.scale = 1.5;
-    apply_style(&harness.ctx, &harness.state().state.settings);
+    theme::apply(&harness.ctx, &harness.state().state.settings);
     harness.run_steps(3);
     set_window_pixels(&mut harness, vec2(1080.0, 720.0));
     let mut previous_bottom = None;
@@ -325,11 +333,11 @@ fn storage_scan_drill_down_largest_files_and_filter_use_real_results() {
         (vec2(1080., 720.), 1.5),
     ] {
         harness.state_mut().state.settings.scale = scale;
-        apply_style(&harness.ctx, &harness.state().state.settings);
+        theme::apply(&harness.ctx, &harness.state().state.settings);
         harness.run_steps(2);
         set_window_pixels(&mut harness, pixels);
         let ppp = harness.ctx.pixels_per_point();
-        let page_right = pixels.x - 26. * ppp;
+        let page_right = pixels.x - PAGE_RIGHT_CLEARANCE * ppp;
         assert_eq!(
             harness.query_all(By::new().role(Role::ScrollBar)).count(),
             1,
@@ -401,7 +409,7 @@ fn storage_scan_drill_down_largest_files_and_filter_use_real_results() {
         );
     }
     harness.state_mut().state.settings.scale = 1.0;
-    apply_style(&harness.ctx, &harness.state().state.settings);
+    theme::apply(&harness.ctx, &harness.state().state.settings);
     harness.run_steps(2);
     set_window_pixels(&mut harness, vec2(1280., 920.));
 
@@ -623,7 +631,7 @@ fn cancelling_and_restarting_keeps_queued_old_results_out_of_new_scan() {
         (rescan_bounds.center().y - cancel_bounds.center().y).abs() < 2.,
         "Cancel must share the scan-action row"
     );
-    assert!(cancel_bounds.right() <= 1280. - 26. * harness.ctx.pixels_per_point());
+    assert!(cancel_bounds.right() <= 1280. - PAGE_RIGHT_CLEARANCE * harness.ctx.pixels_per_point());
     assert!(
         harness
             .get_by_role_and_label(Role::TextInput, "Path")
@@ -702,7 +710,7 @@ fn diagnostic_values_stay_clear_of_the_scrollbar_while_scrolling() {
                     });
                 });
         });
-        apply_style(
+        theme::apply(
             &harness.ctx,
             &Settings {
                 scale,
@@ -773,7 +781,7 @@ fn populated_hardware_pages_fit_the_minimum_window_at_maximum_scale() {
                 State::fixture(settings)
             });
             app.state.settings.scale = 1.5;
-            apply_style(&cc.egui_ctx, &app.state.settings);
+            theme::apply(&cc.egui_ctx, &app.state.settings);
             app.state.inventory = Some(Inventory {
                 cpu: vec![Field::valid(
                     "Model",
@@ -840,7 +848,7 @@ fn populated_hardware_pages_fit_the_minimum_window_at_maximum_scale() {
         assert_eq!(bars.len(), 1, "{page:?} must use only the page scrollbar");
         for bar in bars {
             assert!(
-                bar.rect().right() <= 1080. - 26. * ppp + 1.,
+                bar.rect().right() <= 1080. - PAGE_RIGHT_CLEARANCE * ppp + 1.,
                 "{page:?} content pushes its scrollbar out of the page: {:?}",
                 bar.rect()
             );
@@ -862,10 +870,26 @@ fn populated_hardware_pages_fit_the_minimum_window_at_maximum_scale() {
     }
     harness.state_mut().0.state.settings.page = Page::Overview;
     harness.state_mut().0.state.settings.scale = 1.0;
-    apply_style(&harness.ctx, &harness.state().0.state.settings);
+    theme::apply(&harness.ctx, &harness.state().0.state.settings);
     harness.run_steps(2);
     harness.set_size(vec2(1440., 940.) / harness.ctx.pixels_per_point());
     harness.run_steps(3);
+    // At the default size every page also keeps its content inside the canvas.
+    for page in [
+        Page::Cpu,
+        Page::Gpu,
+        Page::Diagnostics,
+        Page::Settings,
+        Page::Overview,
+    ] {
+        harness.state_mut().0.state.settings.page = page;
+        harness.run_steps(3);
+        let bar = harness.get_by_role(Role::ScrollBar).rect();
+        assert!(
+            bar.right() <= 1440. - PAGE_RIGHT_CLEARANCE * harness.ctx.pixels_per_point() + 1.,
+            "{page:?} content pushes the page wider than the window: {bar:?}"
+        );
+    }
     assert_eq!(
         harness.query_all(By::new().role(Role::ScrollBar)).count(),
         1,
@@ -927,7 +951,7 @@ fn populated_hardware_pages_fit_the_minimum_window_at_maximum_scale() {
     for language in [Language::German, Language::French, Language::Spanish] {
         harness.state_mut().0.state.settings.language = language;
         harness.state_mut().0.state.settings.scale = 1.5;
-        apply_style(&harness.ctx, &harness.state().0.state.settings);
+        theme::apply(&harness.ctx, &harness.state().0.state.settings);
         harness.run_steps(2);
         harness.set_size(vec2(1080., 720.) / harness.ctx.pixels_per_point());
         for page in [
@@ -947,7 +971,8 @@ fn populated_hardware_pages_fit_the_minimum_window_at_maximum_scale() {
                 "{language:?} {page:?}: only the page scrollbar"
             );
             assert!(
-                bars[0].rect().right() <= 1080. - 26. * harness.ctx.pixels_per_point() + 1.,
+                bars[0].rect().right()
+                    <= 1080. - PAGE_RIGHT_CLEARANCE * harness.ctx.pixels_per_point() + 1.,
                 "{language:?} {page:?} overflows the window: {:?}",
                 bars[0].rect()
             );
@@ -1011,6 +1036,9 @@ fn sensor_columns_stay_fixed_for_zero_full_scale_and_unavailable_values() {
     };
     let mut harness = Harness::builder().with_size([820.0, 230.0]).build_ui_state(
         |ui, fixture: &mut SensorFixture| {
+            if !fonts_installed(ui) {
+                return;
+            }
             let readings: Vec<_> = fixture.readings.iter().collect();
             sensor_table(
                 ui,
@@ -1220,7 +1248,9 @@ fn stale_chart_status_is_exposed_to_assistive_technology() {
     let mut harness = Harness::builder()
         .with_size([420., 250.])
         .build_ui(move |ui| {
-            metric_chart(ui, "CPU", &points, "%", 100., CPU, 166.);
+            if fonts_installed(ui) {
+                metric_chart(ui, "CPU", &points, "%", 100., Series::Cpu, 80.);
+            }
         });
     harness.run_steps(2);
     assert!(

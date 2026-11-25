@@ -15,7 +15,8 @@ The Rust standard library is outside Cargo.lock; its [original notices](toolchai
 ## Distribution notes
 
 - Include the application LICENSE, this inventory, and bundled third-party license texts with the portable package.
-- Default egui fonts are separate assets: Hack (MIT/Bitstream Vera terms), Noto Emoji (OFL), Ubuntu (Ubuntu Font Licence), and emoji-icon-font (MIT). Preserve the font notices even when system fonts override the defaults.
+- The interface font is Inter 4.1 by The Inter Project Authors (SIL Open Font License 1.1), embedded in the executable from `assets/fonts/Inter-Rigometry.ttf`. It is a modified version made by `scripts/build-font.py`: subset to the characters the font maps, layout tables removed and tabular figures made the default digits. Inter declares no Reserved Font Name. Its license text is in third-party-licenses.txt and `assets/fonts/Inter-LICENSE.txt`.
+- Default egui fonts are separate assets: Hack (MIT/Bitstream Vera terms), Noto Emoji (OFL), Ubuntu (Ubuntu Font Licence), and emoji-icon-font (MIT). They remain fallbacks behind Inter; preserve their notices.
 - ICU and Unicode data use Unicode-3.0 notices; unicode-ident also includes Unicode terms alongside its Rust-code license.
 - blake3 is built with its `pure` feature: Rust code only, no C or assembler sources; choose its Apache-2.0 or CC0-1.0 branch.
 - `src/search.rs` adapts name scoring, typo tolerance and query syntax from FSearch (MIT, Noah Dunnagan). It is source adaptation, not a Cargo dependency; its license text is included in third-party-licenses.txt.

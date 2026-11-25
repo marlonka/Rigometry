@@ -18,7 +18,11 @@ Rust 2024, Windows 11 x64 and macOS 11 or later, eframe/egui 0.34.3 with Glow an
 | `state.rs` | Worker messages, bounded history, scan aggregation, navigation, filtering/sorting and background dialogs/exports |
 | `search.rs` | Storage search: query syntax, typo-tolerant ranking and a linear pass over the scan tree with per-scan name masks (adapted from FSearch, MIT) |
 | `update.rs` | Release checks against GitHub, verified downloads through the system's `curl`, in-place replacement of the Windows program or the Mac app bundle, and the restart handover |
-| `ui.rs` | Native pages, virtual tables, charts/treemap, duplicates view, copy/reveal actions, settings and screenshot capture |
+| `ui.rs` | Window shell, sidebar, Overview, CPU, GPU, Diagnostics and Settings pages, screenshot capture |
+| `ui/storage.rs` | Storage page: scan controls, totals, virtual result table, size map and duplicates view |
+| `ui/widgets.rs` | Shared components: cards, headers, columns, segmented controls, switches, meters, live charts, icons |
+| `ui/theme.rs` | Color roles for both themes, the bundled Inter weights and widget styling |
+| `ui/platform.rs` | Administrator restart, Explorer/Finder reveal and platform wording |
 | `i18n.rs` and `i18n/*.json` | Presentation translations, Windows and macOS language detection and locale-specific number formatting; exports remain language-independent |
 
 ## Work and memory bounds
@@ -55,7 +59,9 @@ Installing runs only on request and never while a scan, duplicate search or expo
 
 NVIDIA DLLs load only from known absolute installed-driver locations. No driver DLL is shipped. Other vendors use documented Windows interfaces; additional vendor SDKs are not integrated. Privileged CPU sensors and SPD/controller access remain absent.
 
-System Segoe UI fonts are loaded from Windows when available, with installed MS Gothic for Japanese glyph fallback; these Windows fonts are not redistributed. Default egui fonts provide fallback and require their bundled notices. Portable distribution must include the application license, dependency inventory and third-party license text. See [dependency notices](dependency-notices.md).
+The interface uses Inter 4.1, embedded in the executable (SIL Open Font License 1.1). egui lays out text without OpenType features, so `scripts/build-font.py` makes Inter's tabular figures the default digits: live readings keep their width as they change. The variable weight axis provides regular, medium and semibold text, and the optical-size axis a display cut for titles and large numbers. Installed Segoe UI, MS Gothic, Microsoft YaHei, Malgun Gothic and the macOS CJK fonts are loaded as fallbacks for file names in other scripts; they are not redistributed. Default egui fonts are the last fallback and require their bundled notices.
+
+Components take colors from semantic roles in `ui/theme.rs` (window, canvas, surface, control, text, muted, faint, track) defined for both themes, so geometry stays identical across them. Data series use a categorical palette checked for color-vision deficiency against both surfaces; text never takes a series color. Portable distribution must include the application license, dependency inventory and third-party license text. See [dependency notices](dependency-notices.md).
 
 Supported systems and physical test coverage are listed in the [README](../README.md#compatibility). Benchmarks should state build, dataset, cache state, hardware and timing definition; test success does not establish every device or full UI workflow.
 

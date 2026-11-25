@@ -36,6 +36,39 @@ const TYPES: &[(&str, &[&str])] = &[
     ("font", &["ttf", "otf", "woff", "woff2", "ttc", "fon"]),
 ];
 
+/// What a file holds, judged by its extension. The size map colors by it.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Content {
+    Media,
+    Document,
+    Code,
+    Archive,
+    Program,
+    Other,
+}
+
+pub fn content(name: &str) -> Content {
+    let Some((stem, extension)) = name.rsplit_once('.') else {
+        return Content::Other;
+    };
+    if stem.is_empty() {
+        return Content::Other;
+    }
+    let extension = extension.to_ascii_lowercase();
+    let group = TYPES
+        .iter()
+        .find(|(_, extensions)| extensions.contains(&extension.as_str()))
+        .map(|(group, _)| *group);
+    match group {
+        Some("image" | "video" | "audio") => Content::Media,
+        Some("doc") => Content::Document,
+        Some("code") => Content::Code,
+        Some("archive" | "disk") => Content::Archive,
+        Some("app") => Content::Program,
+        _ => Content::Other,
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Debug)]
 enum Mode {
     Fuzzy,
@@ -779,6 +812,24 @@ fn token_matches(name: &Name, t: &Token) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn content_follows_the_type_filters_and_ignores_dotfiles() {
+        for (name, expected) in [
+            ("Holiday.JPG", Content::Media),
+            ("song.flac", Content::Media),
+            ("report.pdf", Content::Document),
+            ("main.rs", Content::Code),
+            ("backup.tar.gz", Content::Archive),
+            ("windows.iso", Content::Archive),
+            ("setup.exe", Content::Program),
+            (".gitignore", Content::Other),
+            ("README", Content::Other),
+            ("font.ttf", Content::Other),
+        ] {
+            assert_eq!(content(name), expected, "{name}");
+        }
+    }
 
     fn score(name: &str, q: &str) -> Option<i32> {
         let query = Query::parse(q).unwrap();

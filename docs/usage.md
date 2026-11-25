@@ -38,7 +38,7 @@ Downloads use the system's `curl`, which Windows 10 and later and macOS include,
 | Cancel a storage scan or duplicate search | `Esc` (after leaving a text field or menu) |
 | Parent storage folder | `Alt+Up` |
 
-Settings includes dark/light/system themes, scale from 85–150% and reduced motion. At smaller window sizes, sections stack and the page scrolls vertically.
+Settings includes dark/light/system themes, scale from 85–150% in 5% steps and reduced motion, which also turns off animated scrolling. At smaller window sizes, sections stack and the page scrolls vertically. When a new version is out, the sidebar notice opens Settings at **Updates**.
 
 ## Language
 
@@ -68,6 +68,8 @@ Storage sizes are **On disk**: the clusters an entry occupies, which is what del
 Scans read folder listings and open no file, so files Windows keeps open exclusively, such as `pagefile.sys`, show their size too. Named data streams, such as the download markers Windows attaches to files from the internet, count only in administrator scans of a whole drive.
 
 Right-click any row or map tile to show it in Explorer (Finder on a Mac), copy its path or open a folder; the folder button at the end of each row also shows the entry there.
+
+The size map shows the entries of the current folder, each tile's area proportional to its size on disk. Folders are gray; files are colored by what they hold, judged by their extension the same way as the `type:` search filter: media, documents, code, archives and disk images, programs, and other files. The legend lists only the kinds present.
 
 `≥` marks a known lower bound. Cancellation, inaccessible entries or a metadata limit can leave totals incomplete. Expand scan accounting to inspect exclusions and errors.
 

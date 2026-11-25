@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **Redesigned interface:** the bundled Inter typeface with regular, medium and semibold weights replaces the thin default font, and numbers use its tabular figures instead of a monospace font, so live readings keep their width. Dark and light themes have new neutral color roles, a rounded content area, cards with hairline borders, segmented view switches and on/off switches. Windows and macOS look the same.
+- Overview: CPU, memory and GPU share one strip of live readings, followed by the system summary and drives, which now fit on the first screen.
+- Storage: totals and scan status share one row; view switcher, search and export share one toolbar above the folder path. The size map colors files by kind (media, documents, code, archives, programs) with a legend; folders are gray.
+- Logical processors take one line each, up to four per row. GPU sensors are separated by lines, with minimum and maximum quieter than the current value. Charts fill the area under the line.
+- The sidebar shows each page's shortcut wherever its name leaves room, and its update notice opens Settings at **Updates**. Interface scale changes in 5% steps. Reduced motion also turns off animated scrolling. Messages under the page can be dismissed.
+- Fixed: Diagnostics opened and closed a graphics adapter's inventory and its latest sample together; sort arrows showed as boxes on a Mac; a motherboard without firmware details read "Unavailable Unavailable".
 - **Updates from inside the app:** Rigometry asks GitHub every six hours whether a new version is out and shows it in the sidebar. **Settings → Updates → Update and restart** downloads it, checks it against GitHub's SHA-256 checksum, replaces the app in place on Windows and macOS and restarts with your settings. Nothing installs without a click; the automatic check can be turned off. [How updates work](https://github.com/marlonka/Rigometry/blob/main/docs/usage.md#updates)
 
 ## 0.4.0
