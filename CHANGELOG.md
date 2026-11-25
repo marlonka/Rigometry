@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.0
 
 - **Redesigned interface:** the bundled Inter typeface with regular, medium and semibold weights replaces the thin default font, and numbers use its tabular figures instead of a monospace font, so live readings keep their width. Dark and light themes have new neutral color roles, a rounded content area, cards with hairline borders, segmented view switches and on/off switches. Windows and macOS look the same.
 - Overview: CPU, memory and GPU share one strip of live readings, followed by the system summary and drives, which now fit on the first screen.
