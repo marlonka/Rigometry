@@ -68,6 +68,10 @@ try {
             [pscustomobject]@{ File = $_.Name; ExactNoticeIncluded = $notices.Contains($body) }
         })
     }
+    # The bundled interface font is not a Cargo package; its license must be present too.
+    $interLicense = 'assets/fonts/Inter-LICENSE.txt'
+    $interBody = (Get-Content -LiteralPath $interLicense -Raw).Trim().Replace("`r`n", "`n")
+    $fontChecks += [pscustomobject]@{ File = $interLicense; ExactNoticeIncluded = $notices.Contains($interBody) }
     $nvmlComments = @()
     foreach ($line in Get-Content -LiteralPath 'src/hardware/nvml.rs') {
         if ($line.StartsWith('//')) { $nvmlComments += $line.TrimStart('/').TrimStart('!').Trim() }
